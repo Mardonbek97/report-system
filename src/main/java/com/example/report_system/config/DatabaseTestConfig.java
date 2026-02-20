@@ -14,12 +14,12 @@ public class DatabaseTestConfig {
     CommandLineRunner testOracleConnection(DataSource dataSource) {
         return args -> {
             try (Connection connection = dataSource.getConnection()) {
-                System.out.println("Oracle Database connection successfully!");
+                System.out.println("✅ Oracle Database ulanish muvaffaqiyatli!");
                 System.out.println("Database: " + connection.getMetaData().getDatabaseProductName());
                 System.out.println("Version: " + connection.getMetaData().getDatabaseProductVersion());
                 System.out.println("URL: " + connection.getMetaData().getURL());
             } catch (Exception e) {
-                System.err.println("Oracle connection error: " + e.getMessage());
+                System.err.println("❌ Oracle ulanishda xatolik: " + e.getMessage());
                 e.printStackTrace();
             }
         };
