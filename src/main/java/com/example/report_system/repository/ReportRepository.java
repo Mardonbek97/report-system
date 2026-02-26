@@ -20,12 +20,12 @@ public interface ReportRepository extends JpaRepository<Reports, Long> {
     @Query(value = "SELECT * FROM REP_CORE_NAME WHERE id = :uuid", nativeQuery = true)
     Optional<Reports> findById(@Param("uuid") UUID uuid);
 
-    @Query(value = "SELECT P.PARAM_NAME, P.PARAM_TYPE \n" +
-            " FROM REP_CORE_NAME T\n" +
-            "LEFT JOIN REP_CORE_PARAMS P \n" +
-            "ON T.ID = P.REP_ID\n" +
-            "WHERE ID = :uuid\n" +
-            "\n" +
-            "ORDER BY P.PARAM_ORDER", nativeQuery = true)
+    @Query(value = "SELECT P.PARAM_NAME, P.PARAM_TYPE, P.PARAM_VIEW \n" +
+                    " FROM REP_CORE_NAME T\n" +
+                    "LEFT JOIN REP_CORE_PARAMS P \n" +
+                    "ON T.ID = P.REP_ID\n" +
+                    "WHERE ID = :uuid\n" +
+                    "\n" +
+                    "ORDER BY P.PARAM_ORDER", nativeQuery = true)
     List<ReportParamsDto> findByIdParams(@Param("uuid") UUID uuid);
 }

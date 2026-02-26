@@ -17,6 +17,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.Locale;
+import java.util.Optional;
 
 @Service
 public class AuthService {
@@ -53,7 +54,7 @@ public class AuthService {
 
         userRepository.save(user);
 
-        String token = jwtUtil.generateToken(user.getUsername());
+        String token = jwtUtil.generateToken(user.getUsername(), user.getRole().toString());
 
         return new AuthResponseDto(token, user.getUsername(), user.getRole());
     }
@@ -71,9 +72,29 @@ public class AuthService {
             throw new AppBadException(bundleMessageSource.getMessage("auth.username.status", null, new Locale(lang.name())));
         }
 
-        String token = jwtUtil.generateToken(user.getUsername());
+        if(user.getStatus().toString() == "BLOCKED" || user.getStatus().toString() == "CLOSED"){
+            throw  new AppBadException(bundleMessageSource.getMessage("auth.username.status", null, new Locale(lang.name())));
+        }
+
+
+        String token = jwtUtil.generateToken(user.getUsername(), user.getRole().toString());
 
         return new AuthResponseDto(token, user.getUsername(), user.getRole());
+    }
+
+    public void update(LoginRequestDto request) {
+
+        Optional<Users> userOpt = userRepository.findByUsername(request.username());
+
+        if (userOpt.isEmpty()) {
+            throw new AppBadException("Username not found!!!");
+        }
+
+        Users user = userOpt.get();
+        user.setPassword(passwordEncoder.encode(request.password()));
+
+        userRepository.save(user);
+
     }
 
 

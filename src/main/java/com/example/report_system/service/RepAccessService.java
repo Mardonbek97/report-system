@@ -5,6 +5,7 @@ import com.example.report_system.entity.RepAccess;
 import com.example.report_system.entity.Reports;
 import com.example.report_system.entity.Users;
 import com.example.report_system.enums.ApplanguageEnum;
+import com.example.report_system.exception.AppBadException;
 import com.example.report_system.repository.RepAccessRepository;
 import com.example.report_system.repository.ReportRepository;
 import com.example.report_system.repository.UserRepository;
@@ -33,6 +34,7 @@ public class RepAccessService {
 
         List<RepAccess> accesses = new ArrayList<>();
 
+        System.out.println(dto);
         for (Long userId : dto.userIds()) {
             Users user = userRepository.findById(userId)
                     .orElseThrow(() -> new RuntimeException("User topilmadi: " + userId));
@@ -41,10 +43,12 @@ public class RepAccessService {
                 RepAccess repAccess = new RepAccess();
                 repAccess.setUsers(user);
                 repAccess.setReports(report);
+                System.out.println( " if ichi "+ dto);
 
                 repAccessRepository.save(repAccess);
             } else {
                 return 0;
+                //throw new AppBadException("The report already added to this user");
             }
         }
         return 1;

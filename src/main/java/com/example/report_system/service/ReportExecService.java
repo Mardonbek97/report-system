@@ -2,7 +2,9 @@ package com.example.report_system.service;
 
 import com.example.report_system.dto.ExecuteReportRequestDto;
 import com.example.report_system.dto.ReportParamsDto;
+import com.example.report_system.entity.Users;
 import com.example.report_system.repository.ReportRepository;
+import com.example.report_system.repository.UserRepository;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.poi.ss.usermodel.*;
@@ -27,24 +29,30 @@ public class ReportExecService {
     private final ExcelExportService excelExportService;
     private final DataSource dataSource; //
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final UserRepository userRepository;
 
-    public ReportExecService(ReportRepository reportRepository, JdbcTemplate jdbcTemplate, ExcelExportService excelExportService, DataSource dataSource) {
+    public ReportExecService(ReportRepository reportRepository, JdbcTemplate jdbcTemplate, ExcelExportService excelExportService, DataSource dataSource, UserRepository userRepository) {
         this.reportRepository = reportRepository;
         this.jdbcTemplate = jdbcTemplate;
         this.excelExportService = excelExportService;
         this.dataSource = dataSource;
+        this.userRepository = userRepository;
     }
 
     public List<ReportParamsDto> getParams(UUID repId) {
         List<ReportParamsDto> dto = reportRepository.findByIdParams(repId)
                 .stream()
-                .map(reportParamsDto -> new ReportParamsDto(reportParamsDto.paramName(), reportParamsDto.paramType()))
+                .map(reportParamsDto -> new ReportParamsDto(reportParamsDto.paramName(),
+                                                            reportParamsDto.paramType(),
+                                                            reportParamsDto.paramView()))
                 .collect(Collectors.toUnmodifiableList());
 
         return dto;
     }
 
     public byte[] executeAndExport(ExecuteReportRequestDto request, String templatePath) throws Exception {
+
+        Optional<Users> user = userRepository.findByUsername(request.username());
 
         // Bitta connection ichida procedure + select
         try (Connection conn = dataSource.getConnection()) {
@@ -56,13 +64,13 @@ public class ReportExecService {
 
                 String hexUuid = request.repId().toString().replace("-", "").toUpperCase();
                 stmt.setString(1, hexUuid);
-                stmt.setLong(2, request.id());
+                stmt.setLong(2, user.get().getId());
 
                 // Param definitionlarni olib JSON quramiz
                 List<ReportParamsDto> paramDefs = reportRepository
                         .findByIdParams(request.repId())
                         .stream()
-                        .map(p -> new ReportParamsDto(p.paramName(), p.paramType()))
+                        .map(p -> new ReportParamsDto(p.paramName(), p.paramType(), p.paramView()))
                         .collect(Collectors.toUnmodifiableList());
 
                 String paramsJson = buildParamsJson(paramDefs, request.params());
@@ -87,7 +95,8 @@ public class ReportExecService {
                     String jsonStr = rs.getString("DATA");
                     //System.out.println(jsonStr);
                     Map<String, Object> jsonData = objectMapper.readValue(
-                            jsonStr, new TypeReference<Map<String, Object>>() {}
+                            jsonStr, new TypeReference<Map<String, Object>>() {
+                            }
                     );
                     rowsMap.put(rowNumber, jsonData);
                 }

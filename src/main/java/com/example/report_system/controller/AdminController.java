@@ -1,16 +1,12 @@
 package com.example.report_system.controller;
 
-import com.example.report_system.dto.AuthResponseDto;
-import com.example.report_system.dto.LoginRequestDto;
-import com.example.report_system.dto.RegisterRequestDto;
-import com.example.report_system.dto.UserListDto;
+import com.example.report_system.dto.*;
 import com.example.report_system.enums.ApplanguageEnum;
 import com.example.report_system.service.AdminService;
 import com.example.report_system.service.AuthService;
 import com.example.report_system.service.UserService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.userdetails.User;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -34,8 +30,8 @@ public class AdminController {
     @PostMapping("/users")
     public ResponseEntity<AuthResponseDto> register(@RequestHeader("Accept-Language") ApplanguageEnum lang,
                                                     @RequestBody RegisterRequestDto request) {
-            AuthResponseDto response = authService.register(lang, request);
-            return ResponseEntity.ok(response);
+        AuthResponseDto response = authService.register(lang, request);
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping("/update")
@@ -50,15 +46,25 @@ public class AdminController {
     }
 
     @GetMapping("/userslist")
-    public List<UserListDto> findAll(){
+    public List<UserListDto> findAll() {
         try {
             return userService.getAll();
-        }
-        catch (Exception e){
+        } catch (Exception e) {
             throw e;
         }
     }
 
+    @PostMapping("/block")
+    public String bock(@RequestBody UserDto request) {
+        adminService.block(request);
+        return "Successfully updated!";
+    }
 
+    @PostMapping("/add")
+    public String add(@RequestBody UserAddDto request) {
+        System.out.println(request);
+        adminService.add(request);
+        return "Successfully updated!";
+    }
 
 }
