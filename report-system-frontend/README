@@ -1,0 +1,6 @@
+npm install
+npm run
+
+/*If you need proxy*/
+npm config set proxy http://ip_address:port
+npm config set https-proxy http://ip_address:port
