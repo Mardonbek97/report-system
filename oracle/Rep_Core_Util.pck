@@ -13,11 +13,6 @@ create or replace package Rep_Core_Util is
                          p_user   varchar2,
                          p_params clob,
                          o_Errmsg out varchar2);
-  Procedure Exec_Proc_schedule(p_rep_id     raw,
-                               p_params     varchar2,
-                               p_user       varchar2,
-                               p_start_time date,
-                               o_Errmsg     out varchar2);
   Procedure Report_Log_Beg(p_repid raw, p_user number, o_rep_id out number);
   Procedure Report_Log_End(p_repid raw, i_rep_id number);
   Procedure Report_Log_Error(p_repid  raw,
@@ -166,6 +161,28 @@ CREATE OR REPLACE Package Body Rep_Core_Util is
   End Access_Right;
   /*********************************************Ending Access_Right**************************************************/
   ------------========================================================================================================----- 
+  /*********************************************Beginnig  Get_Params*************************************************/
+  Function Get_Params(p_rep_id raw) return pljson is
+    v_param        pljson := pljson();
+  Begin
+    for rec in (Select t.param_name, t.param_type
+                  from rep_core_params t
+                 where t.rep_id = p_rep_id) Loop
+      
+      v_param.put(rec.param_name , rec.param_type); 
+      
+    End Loop;
+    
+    return v_param;
+  Exception
+    when others then 
+      v_param.put('param_name', sqlerrm);
+      return v_param;
+      null;
+    
+  End Get_Params;
+  /***************************************************Ending Get_Params**************************************/ 
+ ------------========================================================================================================----- 
   /*********************************************Beginnig  Execute_Proc*******************************************/
   Procedure Execute_Proc(p_rep_id varchar2,
                          p_user   varchar2,
@@ -182,9 +199,11 @@ CREATE OR REPLACE Package Body Rep_Core_Util is
     v_rep_id          number;
     user_access_right EXCEPTION;
     i_rep_id          raw(16);
+    v_param_data_type pljson := pljson();
+    v_param_data_type_name varchar2(100);
   Begin
   
-  i_rep_id := p_rep_id;
+    i_rep_id := p_rep_id;
   
     Select replace(substr(t.name, 1, 30), ' ', '_'), t.package_name
       into v_rep_name, v_package_name
@@ -197,19 +216,24 @@ CREATE OR REPLACE Package Body Rep_Core_Util is
     v_sql  := 'BEGIN ' || v_package_name || '(';
     v_keys := v_json.get_keys;
   
-    FOR i IN 1 .. v_keys.count LOOP
-      v_param_name := REPLACE(v_keys.get(i).to_char, '"', '');
-    
-      IF v_json.get(v_param_name).is_string THEN
+    v_param_data_type := get_params(p_rep_id);
+    --dbms_output.put_line(v_param_data_type.to_char);
+   
+    for i in 1 .. v_keys.count loop
+      v_param_name := replace(v_keys.get(i).to_char, '"', '');
+      
+      v_param_data_type_name := replace(v_param_data_type.get(v_param_name).to_char, '"', '');
+      
+      if lower(v_param_data_type_name) = 'date' then
+        v_param_value := to_char(to_date(v_json.get_string(v_param_name), 'yyyy-mm-dd'), 'yyyymmdd');
+        dbms_output.put_line(v_param_value);
+        v_param_list  := v_param_list || '''' || v_param_value || '''';
+      elsif v_json.get(v_param_name).is_string then
         v_param_value := v_json.get_string(v_param_name);
         v_param_list  := v_param_list || '''' || v_param_value || '''';
-      ELSIF v_json.get(v_param_name).is_number THEN
+      elsif v_json.get(v_param_name).is_number then
         v_param_value := v_json.get_number(v_param_name);
         v_param_list  := v_param_list || v_param_value;
-      ELSIF v_json.get(v_param_name).is_date THEN
-        v_param_value := v_json.get_string(v_param_name);
-        v_param_list  := v_param_list || 'TO_DATE(''' || v_param_value ||
-                         ''', ''YYYY-MM-DD'')';
       ELSE
         v_param_list := v_param_list || 'NULL';
       END IF;
@@ -217,6 +241,7 @@ CREATE OR REPLACE Package Body Rep_Core_Util is
       IF i < v_keys.COUNT THEN
         v_param_list := v_param_list || ', ';
       END IF;
+      
     END LOOP;
   
     v_sql := v_sql || v_param_list || '); END;';
@@ -229,7 +254,9 @@ CREATE OR REPLACE Package Body Rep_Core_Util is
     if not Access_Right(i_rep_id, p_user) then
       raise user_access_right;
     end if;
+  
     Execute immediate v_sql;
+    dbms_output.put_line(v_sql);
     rep_core_util.Report_Log_End(p_repid => i_rep_id, i_rep_id => v_rep_id);
   
   Exception
@@ -242,136 +269,10 @@ CREATE OR REPLACE Package Body Rep_Core_Util is
       o_Errmsg := dbms_utility.format_error_backtrace;
       rep_core_util.Report_Log_Error(p_repid  => i_rep_id,
                                      i_rep_id => v_rep_id,
-                                     i_Errmsg => o_Errmsg||' '||v_sql);
+                                     i_Errmsg => o_Errmsg || ' ' || v_sql);
     
   End Execute_Proc;
   /***************************************************Ending Execute_Proc**************************************/
-  ------------========================================================================================================----- 
-  /*********************************************Beginnig  Exec_Proc_schedule*************************************************/
-  Procedure Exec_Proc_schedule(p_rep_id     raw,
-                               p_params     varchar2,
-                               p_user       varchar2,
-                               p_start_time date,
-                               o_Errmsg     out varchar2) is
-    v_rep_name        varchar2(50);
-    v_package_name    varchar2(200);
-    v_sql             VARCHAR2(32767);
-    v_json            pljson := pljson();
-    v_keys            pljson_list := pljson_list();
-    v_param_list      VARCHAR2(32767) := '';
-    v_param_name      VARCHAR2(100);
-    v_param_value     VARCHAR2(4000);
-    v_sql_log         VARCHAR2(4000);
-    v_rep_id          number;
-    user_access_right EXCEPTION;
-  Begin
-  
-    Select replace(substr(t.name, 1, 30), ' ', '_'), t.package_name
-      into v_rep_name, v_package_name
-      from rep_core_name t
-     where t.id = p_rep_id;
-  
-    v_json := pljson(p_params);
-  
-    v_sql  := 'BEGIN ' || v_package_name || '(';
-    v_keys := v_json.get_keys;
-  
-    FOR i IN 1 .. v_keys.count LOOP
-      v_param_name := REPLACE(v_keys.get(i).to_char, '"', '');
-    
-      IF v_json.get(v_param_name).is_string THEN
-        v_param_value := v_json.get_string(v_param_name);
-        v_param_list  := v_param_list || '''' || v_param_value || '''';
-      ELSIF v_json.get(v_param_name).is_number THEN
-        v_param_value := v_json.get_number(v_param_name);
-        v_param_list  := v_param_list || v_param_value;
-      ELSIF v_json.get(v_param_name).is_date THEN
-        v_param_value := v_json.get_string(v_param_name);
-        v_param_list  := v_param_list || 'TO_DATE(''' || v_param_value ||
-                         ''', ''YYYY-MM-DD'')';
-      ELSE
-        v_param_list := v_param_list || 'NULL';
-      END IF;
-    
-      IF i < v_keys.COUNT THEN
-        v_param_list := v_param_list || ', ';
-      END IF;
-    END LOOP;
-  
-    Rep_Prepare;
-    if not Access_Right(p_rep_id, p_user) then
-      raise user_access_right;
-    end if;
-  
-    v_rep_id := error_log_seq.nextval;
-    v_sql := v_sql || v_param_list || '); 
-    Exception when others then
-      o_Errmsg := dbms_utility.format_error_backtrace;
-       Rep_core_util.Report_Log_Error(p_repid  =>' || p_rep_id || ',
-                                     i_rep_id =>' || v_rep_id || ',
-                                     i_Errmsg => o_Errmsg);
-    END;';
-  
-    v_sql_log := '
-    Info_Session(p_name => ' || v_rep_name || ');
-    rep_core_util.Report_Log_Beg(p_repid =>' || p_rep_id ||
-                 ', p_user => ' || p_user || ',  o_rep_id =>' || v_rep_id || ');
-    Rep_Prepare;
-    Execute immediate' || v_sql || ';
-    rep_core_util.Report_Log_End(p_repid =>' || p_rep_id ||
-                 ',  i_rep_id => ' || v_rep_id || ');';
-                 
-     update rep_core_log t
-       set t.status = '3',  --3=>Scheduled
-           t.percentage = '0'
-     where t.id = v_rep_id
-       and t.rep_id = p_rep_id;
-  
-    Commit;
-  
-    dbms_scheduler.create_job(job_name   => v_rep_name,
-                              job_type   => 'PLSQL_BLOCK',
-                              job_action => v_sql_log,
-                              start_date => p_start_time,
-                              enabled    => TRUE);
-  
-  Exception
-    when user_access_right then
-      o_Errmsg := 'You do not have access the report';
-      rep_core_util.Report_Log_Error(p_repid  => p_rep_id,
-                                     i_rep_id => v_rep_id,
-                                     i_Errmsg => o_Errmsg);
-    when others then
-      o_Errmsg := dbms_utility.format_error_backtrace;
-    
-  End Exec_Proc_schedule;
-  /***************************************************Ending Exec_Proc_schedule**************************************/
-  ------------========================================================================================================----- 
-  /*********************************************Beginnig  Get_Params*************************************************/
-  Function Get_Params(p_rep_id raw) return pljson is
-    v_Json pljson := pljson();
-  
-  Begin
-    for rec in (Select t.param_order, t.param_name
-                  from rep_core_params t
-                 where t.rep_id = p_rep_id) Loop
-    
-      v_Json.put('ord', rec.param_order);
-      v_Json.put('param', rec.param_name);
-    
-    End Loop;
-  
-    return v_Json;
-  Exception
-    when others then
-      v_Json.put('ord', '1');
-      v_Json.put('param', sqlerrm);
-      return v_Json;
-    
-  End Get_Params;
-  /***************************************************Ending Get_Params**************************************/
-------------========================================================================================================----- 
-/*********************************************Beginnig  Get_Params*************************************************/
 
 End Rep_Core_Util;
 /
