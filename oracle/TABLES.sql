@@ -60,7 +60,8 @@ create table REP_CORE_NAME
   id           RAW(16) default SYS_GUID() not null,
   name         VARCHAR2(100),
   package_name VARCHAR2(100),
-  status       CHAR(1),
+  status       CHAR(1), 
+  template     VARCHAR2(100),
   created_at   DATE default SYSDATE,
   modified_at  DATE default SYSDATE
 );
@@ -74,7 +75,8 @@ create table REP_CORE_PARAMS
   rep_id      RAW(16),
   param_name  VARCHAR2(100),
   param_type  VARCHAR2(100),
-  param_order NUMBER
+  param_order NUMBER,
+  param_view  NVARCHAR2(200)
 );
 -- Create/Recreate primary, unique and foreign key constraints 
 alter table REP_CORE_PARAMS
