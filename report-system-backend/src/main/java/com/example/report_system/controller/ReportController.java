@@ -4,17 +4,21 @@ import com.example.report_system.dto.ExecuteReportRequestDto;
 import com.example.report_system.dto.ReportExecLogDto;
 import com.example.report_system.dto.ReportListDto;
 import com.example.report_system.dto.ReportParamsDto;
+import com.example.report_system.entity.Users;
 import com.example.report_system.enums.ApplanguageEnum;
 import com.example.report_system.service.ExcelExportService;
 import com.example.report_system.service.ReportExecService;
 import com.example.report_system.service.ReportService;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
@@ -33,6 +37,8 @@ public class ReportController {
     private final ReportService reportService;
     private final ReportExecService reportExecService;
     private final ExcelExportService excelExportService;
+    @Value("${report.download.dir}")
+    private String allowedDownloadDir;
 
     public ReportController(ReportService reportService, ReportExecService reportExecService, ExcelExportService excelExportService) {
         this.reportService = reportService;
@@ -58,10 +64,8 @@ public class ReportController {
     @PostMapping("/generate")
     public ResponseEntity<String> generateReport(@RequestBody ExecuteReportRequestDto request) throws Exception {
 
-        String templatePath = "D:/Spring/Book1.xlsx";
-
         // Excel generate
-        byte[] excelBytes = reportExecService.executeAndExport(request, templatePath);
+        byte[] excelBytes = reportExecService.executeAndExport(request);
 
         // Faylga saqlash
         String fileName = "report_" + System.currentTimeMillis() + ".xlsx";
@@ -85,14 +89,29 @@ public class ReportController {
     }
 
     @GetMapping("/download")
-    public ResponseEntity<Resource> downloadFile(@RequestParam String path) throws IOException {
-        Path filePath = Paths.get(path);
-        Resource resource = new UrlResource(filePath.toUri());
+    public ResponseEntity<Resource> downloadFile(@RequestParam String path,
+                                                 @AuthenticationPrincipal Users currentUser) throws IOException {
 
+        // 1. Path traversal himoyasi — faqat ruxsat etilgan papkadan yuklab olish
+        Path filePath = Paths.get(path).normalize().toAbsolutePath();
+        Path allowedDir = Paths.get(allowedDownloadDir).toAbsolutePath();
+
+        if (!filePath.startsWith(allowedDir)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+
+        // 2. Faqat .xlsx fayllar
+        if (!filePath.toString().toLowerCase().endsWith(".xlsx")) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+
+        // 3. Fayl mavjudligini tekshirish
+        Resource resource = new UrlResource(filePath.toUri());
         if (!resource.exists() || !resource.isReadable()) {
             return ResponseEntity.notFound().build();
         }
 
+        // 4. Faylni yuborish
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         "attachment; filename=\"" + filePath.getFileName().toString() + "\"")
@@ -100,5 +119,4 @@ public class ReportController {
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
                 .body(resource);
     }
-
 }

@@ -73,7 +73,7 @@ public class ReportService {
 
         Map<String, Object> params = new HashMap<>();
 
-        if (!isAdmin) {
+        if (!isAdmin || !"admin".equals(currentUsername)) {
             sql += "WHERE l.user_id = :user_id ";
             params.put("user_id", userId);
         }

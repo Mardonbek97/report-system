@@ -15,11 +15,12 @@ import java.util.UUID;
 public class Reports {
 
     @Id
-    @Column(unique = true,  columnDefinition = "RAW(16)")
+    @Column(unique = true, columnDefinition = "RAW(16)")
     private UUID id;
     private String name;
     private String packageName;
     private String status;
+    private String template;
     @CreationTimestamp
     private LocalDateTime createdAt;
     @UpdateTimestamp
@@ -71,5 +72,13 @@ public class Reports {
 
     public void setId(UUID id) {
         this.id = id;
+    }
+
+    public String getTemplate() {
+        return template;
+    }
+
+    public void setTemplate(String template) {
+        this.template = template;
     }
 }

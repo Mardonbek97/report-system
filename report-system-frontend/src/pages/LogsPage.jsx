@@ -10,8 +10,10 @@ const STATUS_CONFIG = {
 
 const fmt = (dt) => {
   if (!dt) return "—";
-  const d = new Date(dt);
-  return d.toLocaleString("uz-UZ", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  return new Date(dt).toLocaleString("uz-UZ", {
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
 };
 
 const duration = (begin, end) => {
@@ -20,8 +22,19 @@ const duration = (begin, end) => {
   if (ms < 0) return "—";
   const s = Math.floor(ms / 1000);
   if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  return `${m}m ${s % 60}s`;
+  return `${Math.floor(s / 60)}m ${s % 60}s`;
+};
+
+// ── Role helper ──────────────────────────────────────────
+const getRole = () => {
+  try {
+    const token = localStorage.getItem("token");
+    if (token) {
+      const payload = JSON.parse(atob(token.split(".")[1]));
+      return (payload.role || payload.roles?.[0] || "USER").toString().toUpperCase();
+    }
+  } catch {}
+  return (localStorage.getItem("role") || "USER").toUpperCase();
 };
 
 const StatusBadge = ({ status }) => {
@@ -32,9 +45,10 @@ const StatusBadge = ({ status }) => {
       padding: "3px 10px", borderRadius: 99, fontSize: 12, fontWeight: 600,
       color: cfg.color, background: cfg.bg, border: `1px solid ${cfg.border}`,
     }}>
-      <span style={{ width: 6, height: 6, borderRadius: "50%", background: cfg.color,
+      <span style={{
+        width: 6, height: 6, borderRadius: "50%", background: cfg.color,
         boxShadow: status === "RUNNING" ? `0 0 0 3px ${cfg.border}` : "none",
-        animation: status === "RUNNING" ? "pulse 1.4s ease-in-out infinite" : "none",
+        animation: status === "RUNNING" ? "logPulse 1.4s ease-in-out infinite" : "none",
       }} />
       {cfg.label}
     </span>
@@ -47,37 +61,46 @@ const ProgressBar = ({ percentage }) => {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 120 }}>
       <div style={{ flex: 1, height: 6, background: "#f1f5f9", borderRadius: 99, overflow: "hidden" }}>
-        <div style={{ width: `${Math.min(pct, 100)}%`, height: "100%", background: color, borderRadius: 99,
-          transition: "width 0.5s ease" }} />
+        <div style={{ width: `${Math.min(pct, 100)}%`, height: "100%", background: color,
+          borderRadius: 99, transition: "width 0.5s ease" }} />
       </div>
-      <span style={{ fontSize: 12, color: "#64748b", fontVariantNumeric: "tabular-nums", minWidth: 34 }}>
-        {pct.toFixed(0)}%
-      </span>
+      <span style={{ fontSize: 12, color: "#64748b", minWidth: 34 }}>{pct.toFixed(0)}%</span>
     </div>
   );
 };
 
+// ════════════════════════════════════════════════════════
 const ReportLogsPage = () => {
+  const isAdmin = getRole() === "ROLE_ADMIN";
+  const currentUser = localStorage.getItem("username") || "";
+
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [expandedRow, setExpandedRow] = useState(null);
-  const [username, setUsername] = useState("admin");
+
+  // Admin: username o'zgartira oladi. User: faqat o'zini ko'radi
+  const [username, setUsername] = useState(currentUser);
   const inputRef = useRef();
 
-  const fetchLogs = async () => {
+  const fetchLogs = async (uname) => {
+    const queryUser = isAdmin ? (uname ?? username) : currentUser;
     setLoading(true);
     setError("");
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch(`http://localhost:8080/api/reports/report/logs?username=${encodeURIComponent(username)}`, {
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      });
+      const res = await fetch(
+        `http://localhost:8080/api/reports/report/logs?username=${encodeURIComponent(queryUser)}`,
+        {
+          headers: {
+            "Content-Type": "application/json",
+            "Accept-Language": "UZ",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        }
+      );
       if (!res.ok) throw new Error(`Xatolik: ${res.status} ${res.statusText}`);
       const data = await res.json();
       setLogs(data);
@@ -103,9 +126,9 @@ const ReportLogsPage = () => {
   return (
     <div style={s.wrapper}>
       <style>{`
-        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-        @keyframes spin { to{transform:rotate(360deg)} }
-        @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes logPulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+        @keyframes logSpin  { to{transform:rotate(360deg)} }
+        @keyframes logFadeIn{ from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
         tr.log-row:hover td { background: #f8fafc !important; }
       `}</style>
 
@@ -115,7 +138,7 @@ const ReportLogsPage = () => {
           <h1 style={s.title}>Report Logs</h1>
           <p style={s.subtitle}>Barcha report ijro tarixi va holatlari</p>
         </div>
-        <button onClick={fetchLogs} style={s.refreshBtn} title="Yangilash">
+        <button onClick={() => fetchLogs()} style={s.refreshBtn}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
             <path d="M21 3v5h-5" />
@@ -130,14 +153,14 @@ const ReportLogsPage = () => {
       <div style={s.filtersRow}>
         {/* Search */}
         <div style={s.searchWrap}>
-          <svg style={s.searchIcon} width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg style={{ flexShrink: 0 }} width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
           </svg>
           <input
             ref={inputRef}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Report nomi yoki foydalanuvchi..."
+            placeholder="Report nomi bo'yicha qidirish..."
             style={s.searchInput}
           />
           {search && (
@@ -145,20 +168,35 @@ const ReportLogsPage = () => {
           )}
         </div>
 
-        {/* Username */}
-        <div style={s.usernameWrap}>
-          <svg style={{ flexShrink: 0, color: "#94a3b8" }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
-          </svg>
-          <input
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && fetchLogs()}
-            placeholder="username"
-            style={s.usernameInput}
-          />
-          <button onClick={fetchLogs} style={s.goBtn}>Yuborish</button>
-        </div>
+        {/* Username — faqat ADMIN ko'radi va o'zgartira oladi */}
+        {isAdmin ? (
+          <div style={s.usernameWrap}>
+            <svg style={{ flexShrink: 0, color: "#94a3b8" }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
+            </svg>
+            <input
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && fetchLogs(username)}
+              placeholder="username kiriting..."
+              style={s.usernameInput}
+            />
+            <button onClick={() => fetchLogs(username)} style={s.goBtn}>Qidirish</button>
+          </div>
+        ) : (
+          /* USER: faqat o'z username ini ko'rsatadi, o'zgartira olmaydi */
+          <div style={{ ...s.usernameWrap, background: "#f8fafc", cursor: "default" }}>
+            <svg style={{ flexShrink: 0, color: "#94a3b8" }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
+            </svg>
+            <span style={{ fontSize: 13, color: "#475569", fontWeight: 600, padding: "2px 4px" }}>
+              {currentUser}
+            </span>
+            <span style={{ fontSize: 11, color: "#94a3b8", marginLeft: 2, padding: "2px 8px", background: "#f1f5f9", borderRadius: 6 }}>
+              faqat o'zingiz
+            </span>
+          </div>
+        )}
 
         {/* Status filter */}
         <div style={s.statusFilter}>
@@ -210,8 +248,10 @@ const ReportLogsPage = () => {
                     <td colSpan={10} style={s.emptyRow}>
                       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
                         <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-                          <line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="11" y2="17"/>
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                          <polyline points="14 2 14 8 20 8"/>
+                          <line x1="9" y1="13" x2="15" y2="13"/>
+                          <line x1="9" y1="17" x2="11" y2="17"/>
                         </svg>
                         <span>Log topilmadi</span>
                       </div>
@@ -219,7 +259,7 @@ const ReportLogsPage = () => {
                   </tr>
                 ) : filtered.map((r, i) => (
                   <>
-                    <tr key={r.id} className="log-row" style={{ ...s.tr, animation: `fadeIn 0.2s ease ${i * 0.03}s both` }}>
+                    <tr key={r.id} className="log-row" style={{ ...s.tr, animation: `logFadeIn 0.2s ease ${i * 0.03}s both` }}>
                       <td style={{ ...s.td, color: "#94a3b8", fontSize: 12 }}>{i + 1}</td>
                       <td style={{ ...s.td, fontFamily: "monospace", fontSize: 12, color: "#94a3b8" }}>{r.id}</td>
                       <td style={{ ...s.td, fontWeight: 500, color: "#0f172a" }}>{r.reportName || "—"}</td>
@@ -236,7 +276,10 @@ const ReportLogsPage = () => {
                       <td style={s.td}><StatusBadge status={r.status} /></td>
                       <td style={s.td}>
                         {r.errorMessage && (
-                          <button onClick={() => setExpandedRow(expandedRow === r.id ? null : r.id)} style={s.detailBtn} title="Xatolikni ko'rish">
+                          <button
+                            onClick={() => setExpandedRow(expandedRow === r.id ? null : r.id)}
+                            style={s.detailBtn}
+                          >
                             {expandedRow === r.id ? "▲" : "▼"}
                           </button>
                         )}
@@ -276,19 +319,18 @@ const s = {
   header: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24 },
   title: { margin: 0, fontSize: 22, fontWeight: 700, color: "#0f172a", letterSpacing: "-0.3px" },
   subtitle: { margin: "4px 0 0", fontSize: 13, color: "#94a3b8" },
-  refreshBtn: { display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 8, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontSize: 13, fontWeight: 500, cursor: "pointer", transition: "all 0.15s" },
+  refreshBtn: { display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 8, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontSize: 13, fontWeight: 500, cursor: "pointer" },
   filtersRow: { display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 16, alignItems: "center" },
   searchWrap: { display: "flex", alignItems: "center", gap: 8, background: "#fff", border: "1.5px solid #e2e8f0", borderRadius: 10, padding: "8px 12px", flex: "1 1 220px", minWidth: 200 },
-  searchIcon: { flexShrink: 0 },
   searchInput: { flex: 1, border: "none", outline: "none", fontSize: 13, color: "#0f172a", background: "transparent" },
-  clearBtn: { border: "none", background: "none", color: "#94a3b8", cursor: "pointer", fontSize: 13, padding: 0, lineHeight: 1 },
+  clearBtn: { border: "none", background: "none", color: "#94a3b8", cursor: "pointer", fontSize: 13, padding: 0 },
   usernameWrap: { display: "flex", alignItems: "center", gap: 6, background: "#fff", border: "1.5px solid #e2e8f0", borderRadius: 10, padding: "6px 10px 6px 12px" },
-  usernameInput: { border: "none", outline: "none", fontSize: 13, color: "#0f172a", background: "transparent", width: 110 },
+  usernameInput: { border: "none", outline: "none", fontSize: 13, color: "#0f172a", background: "transparent", width: 130 },
   goBtn: { padding: "5px 12px", borderRadius: 7, border: "none", background: "#2563eb", color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer" },
   statusFilter: { display: "flex", gap: 4, flexWrap: "wrap" },
   filterBtn: { padding: "5px 12px", borderRadius: 99, fontSize: 12, cursor: "pointer", transition: "all 0.15s" },
   center: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 200 },
-  spinner: { width: 36, height: 36, border: "3px solid #e2e8f0", borderTop: "3px solid #2563eb", borderRadius: "50%", animation: "spin 0.8s linear infinite" },
+  spinner: { width: 36, height: 36, border: "3px solid #e2e8f0", borderTop: "3px solid #2563eb", borderRadius: "50%", animation: "logSpin 0.8s linear infinite" },
   errorBox: { display: "flex", alignItems: "center", gap: 10, background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 10, padding: "14px 20px", fontSize: 14 },
   tableWrap: { background: "#fff", borderRadius: 14, overflow: "hidden", boxShadow: "0 1px 10px rgba(0,0,0,0.06)", border: "1px solid #e2e8f0" },
   table: { width: "100%", borderCollapse: "collapse" },

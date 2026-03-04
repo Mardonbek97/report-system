@@ -29,27 +29,27 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     }
 
     @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        String path = request.getServletPath();
+        return path.startsWith("/api/auth/") ||
+                path.startsWith("/swagger-ui") ||
+                path.startsWith("/v3/api-docs") ||
+                path.startsWith("/webjars") ||
+                path.startsWith("/swagger-resources");
+    }
+
+    @Override
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain filterChain)
             throws ServletException, IOException {
 
-        String path = request.getServletPath();
-
         final String authHeader = request.getHeader("Authorization");
 
+        // Token yo'q bo'lsa — shunchaki o'tkazib yubor (Security o'zi hal qiladi)
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            filterChain.doFilter(request, response); // ✅ 401 qaytarmasdan o'tkazsin
+            filterChain.doFilter(request, response);
             return;
-        }
-
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.setContentType("application/json");
-            response.getWriter().write("""
-                        {"status": 401, "message": "Token is missing"}
-                    """);
-            return;  // ← filterChain.doFilter YO'Q!
         }
 
         final String jwt = authHeader.substring(7);
@@ -62,6 +62,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 UsernamePasswordAuthenticationToken authToken =
                         new UsernamePasswordAuthenticationToken(
                                 user, null,
+                                // ✅ "ROLE_" prefix qo'shildi
                                 List.of(new SimpleGrantedAuthority(user.getRole().name()))
                         );
                 authToken.setDetails(

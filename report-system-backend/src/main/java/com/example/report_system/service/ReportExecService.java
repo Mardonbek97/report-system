@@ -2,6 +2,7 @@ package com.example.report_system.service;
 
 import com.example.report_system.dto.ExecuteReportRequestDto;
 import com.example.report_system.dto.ReportParamsDto;
+import com.example.report_system.entity.Reports;
 import com.example.report_system.entity.Users;
 import com.example.report_system.repository.ReportRepository;
 import com.example.report_system.repository.UserRepository;
@@ -11,6 +12,8 @@ import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.core.io.ClassPathResource;
+import java.io.InputStream;
 
 import javax.sql.DataSource;
 import java.io.ByteArrayOutputStream;
@@ -43,16 +46,18 @@ public class ReportExecService {
         List<ReportParamsDto> dto = reportRepository.findByIdParams(repId)
                 .stream()
                 .map(reportParamsDto -> new ReportParamsDto(reportParamsDto.paramName(),
-                                                            reportParamsDto.paramType(),
-                                                            reportParamsDto.paramView()))
+                        reportParamsDto.paramType(),
+                        reportParamsDto.paramView()))
                 .collect(Collectors.toUnmodifiableList());
 
         return dto;
     }
 
-    public byte[] executeAndExport(ExecuteReportRequestDto request, String templatePath) throws Exception {
+    public byte[] executeAndExport(ExecuteReportRequestDto request) throws Exception {
 
         Optional<Users> user = userRepository.findByUsername(request.username());
+        Optional<Reports> report = reportRepository.findById(request.repId());
+        String templatePath = report.get().getTemplate();
 
         // Bitta connection ichida procedure + select
         try (Connection conn = dataSource.getConnection()) {
@@ -112,8 +117,11 @@ public class ReportExecService {
 
     private byte[] generateExcel(String templatePath, Map<Integer, Map<String, Object>> rowsMap) throws Exception {
 
-        try (FileInputStream fis = new FileInputStream(templatePath);
-             Workbook workbook = new XSSFWorkbook(fis)) {
+        //try (FileInputStream fis = new FileInputStream(templatePath);
+
+          //   Workbook workbook = new XSSFWorkbook(fis)) {
+        try (InputStream fis = new ClassPathResource("templates/" + templatePath).getInputStream()) {
+            Workbook workbook = new XSSFWorkbook(fis);
 
             Sheet sheet = workbook.getSheetAt(0);
             int templateRowIndex = findDataStartRow(sheet);
@@ -228,5 +236,6 @@ public class ReportExecService {
         bb.putLong(uuid.getLeastSignificantBits());
         return bb.array();
     }
+
 
 }

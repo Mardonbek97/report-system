@@ -21,7 +21,6 @@ const resolveInputType = (paramType) => {
     "NUMBER", "INTEGER", "INT", "FLOAT", "BINARY_FLOAT", "BINARY_DOUBLE",
     "BIGINT", "LONG", "SMALLINT", "DECIMAL", "NUMERIC", "REAL",
   ].includes(t)) return "number";
-  // VARCHAR2, CHAR, CLOB, NVARCHAR2, NCHAR, TEXT, STRING, VARCHAR, INTERVAL, etc.
   return "text";
 };
 
@@ -82,7 +81,6 @@ const ParamInput = ({ param, value, onChange, hasError }) => {
 
 // ════════════════════════════════════════════════════════
 const ReportExecutePage = () => {
-  // repId ni URL query string dan olamiz: ?repId=UUID
   const repId = new URLSearchParams(window.location.search).get("repId");
 
   const [reportName, setReportName] = useState("Report");
@@ -95,15 +93,17 @@ const ReportExecutePage = () => {
   const [execLoading, setExecLoading] = useState(false);
   const [execError, setExecError] = useState("");
 
-  const [result, setResult] = useState(null);       // null | Array | string
+  const [result, setResult] = useState(null);
   const [resultCols, setResultCols] = useState([]);
   const [resultSearch, setResultSearch] = useState("");
+
+  const [downloadLoading, setDownloadLoading] = useState(false);
+  const [downloadError, setDownloadError] = useState("");
 
   // ── Load report name & params ────────────────────────
   useEffect(() => {
     if (!repId) { setParamsError("repId topilmadi"); setParamsLoading(false); return; }
 
-    // Report nomi va Long id ni localStorage dan olish
     try {
       const stored = localStorage.getItem(`exec_report_${repId}`);
       if (stored) {
@@ -112,7 +112,6 @@ const ReportExecutePage = () => {
       }
     } catch {}
 
-    // Parametrlarni backenddan olish
     const fetchParams = async () => {
       setParamsLoading(true);
       setParamsError("");
@@ -122,7 +121,7 @@ const ReportExecutePage = () => {
           { headers: authHeaders() }
         );
         if (!res.ok) throw new Error("Parametrlarni yuklashda xatolik");
-        const data = await res.json(); // List<ReportParamsDto>
+        const data = await res.json();
         setParams(data);
         const init = {};
         data.forEach((p) => { init[p.paramName] = ""; });
@@ -153,11 +152,11 @@ const ReportExecutePage = () => {
     setResult(null);
     setResultCols([]);
     setResultSearch("");
+    setDownloadError("");
   };
 
   // ── Execute ──────────────────────────────────────────
   const handleExecute = async () => {
-    // Validate — empty check
     const errors = {};
     params.forEach((p) => {
       if (!paramValues[p.paramName]?.toString().trim()) errors[p.paramName] = true;
@@ -173,10 +172,9 @@ const ReportExecutePage = () => {
     setResult(null);
     setResultCols([]);
     setResultSearch("");
+    setDownloadError("");
 
     try {
-      // DTO: ExecuteReportRequestDto(UUID repId, Map<String,String> params)
-      // Barcha param qiymatlarini String ga aylantiramiz
       const stringParams = {};
       Object.entries(paramValues).forEach(([k, v]) => { stringParams[k] = String(v); });
 
@@ -190,21 +188,48 @@ const ReportExecutePage = () => {
         }),
       });
 
-      // Response: ResponseEntity<String> — "Fayl saqlandi: C:/..." yoki xato matni
       const text = await res.text();
+      if (!res.ok) throw new Error(text || "Xatolik yuz berdi");
 
-      if (!res.ok) {
-        throw new Error(text || "Xatolik yuz berdi");
-      }
-
-      // Muvaffaqiyatli — fayl yo'lini ko'rsatamiz
-      // "Fayl saqlandi: C:/..." → faqat fayl yo'lini olamiz
       setResult(text.replace(/^Fayl saqlandi:\s*/i, "").trim());
-
     } catch (err) {
       setExecError(err.message);
     } finally {
       setExecLoading(false);
+    }
+  };
+
+  // ── Download (fetch + Authorization header) ──────────
+  const handleDownload = async (filePath) => {
+    setDownloadLoading(true);
+    setDownloadError("");
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(
+        `http://localhost:8080/api/reports/download?path=${encodeURIComponent(filePath)}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Accept-Language": "UZ",
+          },
+        }
+      );
+
+      if (!res.ok) throw new Error("Yuklab olishda xatolik: " + res.status);
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filePath.split(/[\\/]/).pop();
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setDownloadError(err.message);
+    } finally {
+      setDownloadLoading(false);
     }
   };
 
@@ -301,7 +326,6 @@ const ReportExecutePage = () => {
             <div style={{ ...p.errMsg, margin: "0 20px 16px" }}>⚠ {execError}</div>
           )}
 
-          {/* Action buttons */}
           {!paramsLoading && !paramsError && (
             <div style={p.actions}>
               <button style={p.resetBtn} onClick={handleReset} disabled={execLoading}>
@@ -347,7 +371,6 @@ const ReportExecutePage = () => {
             </div>
 
             <div style={p.successBox}>
-              {/* Excel icon */}
               <div style={p.excelIcon}>
                 <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="#16a34a">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8}
@@ -357,26 +380,44 @@ const ReportExecutePage = () => {
               <div style={p.successText}>
                 <div style={p.successTitle}>Excel fayl yaratildi!</div>
                 <div style={p.successPath}>{result}</div>
+
+                {downloadError && (
+                  <div style={{ ...p.errMsg, marginTop: 10 }}>⚠ {downloadError}</div>
+                )}
+
                 <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
-                  {/* Download — backend /download?path=... endpointdan */}
-                  <a
-                    href={`http://localhost:8080/api/reports/download?path=${encodeURIComponent(result)}`}
-                    download
-                    style={p.downloadBtn}
+                  {/* ✅ fetch + Authorization header bilan yuklab olish */}
+                  <button
+                    style={{ ...p.downloadBtn, opacity: downloadLoading ? 0.7 : 1 }}
+                    onClick={() => handleDownload(result)}
+                    disabled={downloadLoading}
                   >
-                    <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5}
-                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                    </svg>
-                    Yuklab olish
-                  </a>
+                    {downloadLoading ? (
+                      <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={p.btnSpinner} /> Yuklanmoqda...
+                      </span>
+                    ) : (
+                      <>
+                        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5}
+                            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        Yuklab olish
+                      </>
+                    )}
+                  </button>
+
                   {/* Clipboard copy */}
                   <button
+                    id="copy-path-btn"
                     style={p.copyBtn}
                     onClick={() => {
                       navigator.clipboard.writeText(result).then(() => {
                         const btn = document.getElementById("copy-path-btn");
-                        if (btn) { btn.textContent = "✓ Nusxalandi!"; setTimeout(() => { btn.textContent = "Yo'lni nusxalash"; }, 2000); }
+                        if (btn) {
+                          btn.textContent = "✓ Nusxalandi!";
+                          setTimeout(() => { btn.textContent = "Yo'lni nusxalash"; }, 2000);
+                        }
                       });
                     }}
                   >
@@ -384,7 +425,7 @@ const ReportExecutePage = () => {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                         d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                     </svg>
-                    <span id="copy-path-btn">Yo'lni nusxalash</span>
+                    Yo'lni nusxalash
                   </button>
                 </div>
               </div>
@@ -399,22 +440,18 @@ const ReportExecutePage = () => {
 // ── Styles ───────────────────────────────────────────────
 const p = {
   page: { minHeight: "100vh", background: "#f1f5f9", fontFamily: "'Segoe UI', system-ui, sans-serif" },
-
   topBar: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 28px", background: "#fff", borderBottom: "1px solid #e2e8f0", boxShadow: "0 1px 4px rgba(0,0,0,0.05)", position: "sticky", top: 0, zIndex: 100 },
   topLeft: { display: "flex", alignItems: "center", gap: 12 },
   topIcon: { width: 38, height: 38, borderRadius: 10, background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
   topName: { fontSize: 16, fontWeight: 800, color: "#0f172a" },
   topSub: { fontSize: 11, color: "#94a3b8", marginTop: 1 },
   closeBtn: { display: "inline-flex", alignItems: "center", gap: 6, border: "1.5px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "7px 14px", fontSize: 13, color: "#64748b", cursor: "pointer", fontWeight: 600 },
-
   body: { maxWidth: 960, margin: "0 auto", padding: "28px 20px", display: "flex", flexDirection: "column", gap: 20 },
-
   card: { background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", boxShadow: "0 1px 6px rgba(0,0,0,0.06)", overflow: "hidden" },
   cardHead: { display: "flex", alignItems: "center", gap: 10, padding: "15px 20px", borderBottom: "1px solid #f1f5f9", background: "#fafafa", flexWrap: "wrap" },
   cardHeadIcon: { width: 32, height: 32, borderRadius: 8, background: "#ede9fe", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
   cardTitle: { fontSize: 15, fontWeight: 700, color: "#0f172a" },
   badge: { display: "inline-block", padding: "2px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700, background: "#ede9fe", color: "#7c3aed" },
-
   paramsGrid: { padding: 20, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 },
   fieldWrap: {},
   labelRow: { display: "flex", alignItems: "center", gap: 7, marginBottom: 8, flexWrap: "wrap" },
@@ -422,36 +459,20 @@ const p = {
   fieldLabel: { fontSize: 14, fontWeight: 600, color: "#1e293b" },
   typeBadge: { marginLeft: "auto", display: "inline-block", padding: "1px 7px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: "#f1f5f9", color: "#64748b" },
   reqBadge: { display: "inline-block", padding: "1px 7px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: "#fef2f2", color: "#dc2626" },
-
   actions: { display: "flex", gap: 12, justifyContent: "flex-end", padding: "14px 20px", borderTop: "1px solid #f1f5f9", background: "#fafafa" },
   resetBtn: { display: "inline-flex", alignItems: "center", gap: 6, border: "1.5px solid #e2e8f0", background: "#fff", borderRadius: 10, padding: "9px 20px", fontSize: 14, color: "#64748b", cursor: "pointer", fontWeight: 600 },
   execBtn: { display: "inline-flex", alignItems: "center", gap: 8, border: "none", background: "linear-gradient(135deg, #16a34a, #15803d)", borderRadius: 10, padding: "9px 24px", fontSize: 14, color: "#fff", cursor: "pointer", fontWeight: 700, boxShadow: "0 4px 12px rgba(22,163,74,0.3)" },
-
   centered: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "36px 20px" },
   hint: { color: "#94a3b8", fontSize: 13, textAlign: "center" },
   errMsg: { margin: 20, padding: "10px 14px", background: "#fef2f2", color: "#dc2626", borderRadius: 8, fontSize: 13, border: "1px solid #fecaca" },
   spinner: { width: 32, height: 32, border: "3px solid #e2e8f0", borderTop: "3px solid #2563eb", borderRadius: "50%", animation: "execSpin 0.8s linear infinite", marginBottom: 12 },
   btnSpinner: { width: 14, height: 14, border: "2px solid rgba(255,255,255,0.35)", borderTop: "2px solid #fff", borderRadius: "50%", display: "inline-block", animation: "execSpin 0.7s linear infinite" },
-
-  resultSearchWrap: { display: "flex", alignItems: "center", gap: 6, background: "#fff", border: "1.5px solid #e2e8f0", borderRadius: 8, padding: "5px 10px", marginLeft: "auto", minWidth: 200 },
-  resultSearchInput: { border: "none", outline: "none", fontSize: 13, color: "#0f172a", background: "transparent", flex: 1 },
-  clearBtn: { border: "none", background: "none", color: "#94a3b8", cursor: "pointer", fontSize: 13, padding: 0 },
-
-  tableScroll: { overflowX: "auto" },
-  table: { width: "100%", borderCollapse: "collapse", fontSize: 14 },
-  thead: { background: "#f8fafc" },
-  th: { padding: "11px 14px", textAlign: "left", fontSize: 12, fontWeight: 700, color: "#64748b", letterSpacing: "0.04em", textTransform: "uppercase", borderBottom: "1px solid #e2e8f0", whiteSpace: "nowrap" },
-  tr: { borderBottom: "1px solid #f1f5f9", background: "#fff", transition: "background 0.1s" },
-  td: { padding: "11px 14px", color: "#334155", verticalAlign: "middle" },
-  rawResult: { padding: 20, fontFamily: "monospace", fontSize: 13, color: "#334155", whiteSpace: "pre-wrap", wordBreak: "break-all", background: "#f8fafc", borderTop: "1px solid #f1f5f9" },
-
-  // Success result styles
   successBox: { display: "flex", alignItems: "center", gap: 16, padding: "24px", background: "#f0fdf4" },
   excelIcon: { width: 56, height: 56, borderRadius: 14, background: "#dcfce7", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "2px solid #bbf7d0" },
   successText: { flex: 1, minWidth: 0 },
   successTitle: { fontSize: 16, fontWeight: 800, color: "#15803d", marginBottom: 6 },
   successPath: { fontSize: 13, color: "#166534", fontFamily: "monospace", background: "#dcfce7", padding: "6px 12px", borderRadius: 8, wordBreak: "break-all", border: "1px solid #bbf7d0" },
-  downloadBtn: { display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", background: "linear-gradient(135deg, #16a34a, #15803d)", color: "#fff", borderRadius: 9, fontSize: 13, fontWeight: 700, textDecoration: "none", boxShadow: "0 3px 10px rgba(22,163,74,0.35)", cursor: "pointer" },
+  downloadBtn: { display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", background: "linear-gradient(135deg, #16a34a, #15803d)", color: "#fff", borderRadius: 9, fontSize: 13, fontWeight: 700, border: "none", boxShadow: "0 3px 10px rgba(22,163,74,0.35)", cursor: "pointer" },
   copyBtn: { display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", background: "#fff", color: "#475569", border: "1.5px solid #e2e8f0", borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: "pointer" },
 };
 
