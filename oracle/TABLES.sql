@@ -63,7 +63,8 @@ create table REP_CORE_NAME
   status       CHAR(1), 
   template     VARCHAR2(100),
   created_at   DATE default SYSDATE,
-  modified_at  DATE default SYSDATE
+  modified_at  DATE default SYSDATE,
+  template     VARCHAR2(100)  /*Test.xlsx like this*/
 );
 -- Create/Recreate primary, unique and foreign key constraints 
 alter table REP_CORE_NAME
@@ -76,7 +77,8 @@ create table REP_CORE_PARAMS
   param_name  VARCHAR2(100),
   param_type  VARCHAR2(100),
   param_order NUMBER,
-  param_view  NVARCHAR2(200)
+  param_view  NVARCHAR2(200),
+  def_value   VARCHAR2(4000)  /*SELECT TO_CHAR(SYSDATE, 'DD.MM.YYYY') FROM DUAL like this */
 );
 -- Create/Recreate primary, unique and foreign key constraints 
 alter table REP_CORE_PARAMS
