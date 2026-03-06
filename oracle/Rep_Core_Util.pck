@@ -225,7 +225,7 @@ CREATE OR REPLACE Package Body Rep_Core_Util is
       v_param_data_type_name := replace(v_param_data_type.get(v_param_name).to_char, '"', '');
       
       if lower(v_param_data_type_name) = 'date' then
-        v_param_value := to_char(to_date(v_json.get_string(v_param_name), 'yyyy-mm-dd'), 'yyyymmdd');
+        v_param_value := to_char(to_date(v_json.get_string(v_param_name), 'dd.mm.yyyy'), 'yyyymmdd');
         dbms_output.put_line(v_param_value);
         v_param_list  := v_param_list || '''' || v_param_value || '''';
       elsif v_json.get(v_param_name).is_string then
