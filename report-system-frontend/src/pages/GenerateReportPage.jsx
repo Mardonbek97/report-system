@@ -39,11 +39,10 @@ const GenerateReportPage = () => {
     r.name?.toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleOpen = (report) => {
-    // Report ma'lumotini localStorage ga saqlab yangi tab ochamiz
-    localStorage.setItem(`exec_report_${report.id}`, JSON.stringify(report));
-    window.open(`/report-execute.html?repId=${report.id}`, "_blank");
-  };
+const handleOpen = (report) => {
+  localStorage.setItem(`exec_report_${report.id}`, JSON.stringify(report));
+  window.open(`/?repId=${report.id}`, "_blank");  
+};
 
   if (loading) return (
     <div style={s.center}>

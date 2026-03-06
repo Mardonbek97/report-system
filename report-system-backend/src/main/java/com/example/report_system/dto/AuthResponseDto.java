@@ -4,6 +4,5 @@ import com.example.report_system.enums.UserRoles;
 import org.springframework.validation.annotation.Validated;
 
 public record AuthResponseDto(String token,
-                              String username,
-                              UserRoles role) {
+                              String username) {
 }

@@ -1,13 +1,11 @@
 package com.example.report_system.controller;
 
-import com.example.report_system.dto.ExecuteReportRequestDto;
-import com.example.report_system.dto.ReportExecLogDto;
-import com.example.report_system.dto.ReportListDto;
-import com.example.report_system.dto.ReportParamsDto;
+import com.example.report_system.dto.*;
 import com.example.report_system.entity.Users;
 import com.example.report_system.enums.ApplanguageEnum;
 import com.example.report_system.service.ExcelExportService;
 import com.example.report_system.service.ReportExecService;
+import com.example.report_system.service.ReportExecZipService;
 import com.example.report_system.service.ReportService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
@@ -36,13 +34,17 @@ public class ReportController {
 
     private final ReportService reportService;
     private final ReportExecService reportExecService;
+    private final ReportExecZipService reportExecZipService;
     private final ExcelExportService excelExportService;
     @Value("${report.download.dir}")
     private String allowedDownloadDir;
+    @Value("${report.export.dir}")
+    private String allowedExportDir;
 
-    public ReportController(ReportService reportService, ReportExecService reportExecService, ExcelExportService excelExportService) {
+    public ReportController(ReportService reportService, ReportExecService reportExecService, ReportExecZipService reportExecZipService, ExcelExportService excelExportService) {
         this.reportService = reportService;
         this.reportExecService = reportExecService;
+        this.reportExecZipService = reportExecZipService;
         this.excelExportService = excelExportService;
     }
 
@@ -56,21 +58,33 @@ public class ReportController {
     }
 
     @GetMapping("/report")
-    public List<ReportParamsDto> getParam(@RequestParam UUID repId, @RequestHeader(value = "Accept-Language") ApplanguageEnum lang) {
+    public List<ReportParamsExecDto> getParam(@RequestParam UUID repId, @RequestHeader(value = "Accept-Language") ApplanguageEnum lang) {
         return reportExecService.getParams(repId);
     }
 
 
+    /*@PostMapping("/generate")
+        public ResponseEntity<String> generateReport(@RequestBody ExecuteReportRequestDto request) throws Exception {
+
+            // Excel generate
+            byte[] excelBytes = reportExecService.executeAndExport(request);
+
+            // Faylga saqlash
+            String fileName = "report_" + System.currentTimeMillis() + ".xlsx";
+            String filePath = allowedExportDir + fileName;
+            Files.write(Paths.get(filePath), excelBytes);
+
+            return ResponseEntity.ok("Fayl saqlandi: " + filePath);
+    }*/
+
     @PostMapping("/generate")
     public ResponseEntity<String> generateReport(@RequestBody ExecuteReportRequestDto request) throws Exception {
 
-        // Excel generate
-        byte[] excelBytes = reportExecService.executeAndExport(request);
+        byte[] zipBytes = reportExecZipService.executeAndExportZip(request);
 
-        // Faylga saqlash
-        String fileName = "report_" + System.currentTimeMillis() + ".xlsx";
-        String filePath = "C:/Users/sobm/Downloads/" + fileName;
-        Files.write(Paths.get(filePath), excelBytes);
+        String fileName = "report_" + System.currentTimeMillis() + ".zip";
+        String filePath = allowedExportDir + fileName;
+        Files.write(Paths.get(filePath), zipBytes);
 
         return ResponseEntity.ok("Fayl saqlandi: " + filePath);
     }
@@ -92,7 +106,7 @@ public class ReportController {
     public ResponseEntity<Resource> downloadFile(@RequestParam String path,
                                                  @AuthenticationPrincipal Users currentUser) throws IOException {
 
-        // 1. Path traversal himoyasi — faqat ruxsat etilgan papkadan yuklab olish
+        // 1. Path traversal himoyasi
         Path filePath = Paths.get(path).normalize().toAbsolutePath();
         Path allowedDir = Paths.get(allowedDownloadDir).toAbsolutePath();
 
@@ -100,8 +114,9 @@ public class ReportController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
 
-        // 2. Faqat .xlsx fayllar
-        if (!filePath.toString().toLowerCase().endsWith(".xlsx")) {
+        // 2. Faqat .xlsx va .zip fayllar
+        String filePathStr = filePath.toString().toLowerCase();
+        if (!filePathStr.endsWith(".xlsx") && !filePathStr.endsWith(".zip")) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
 
@@ -111,12 +126,15 @@ public class ReportController {
             return ResponseEntity.notFound().build();
         }
 
-        // 4. Faylni yuborish
+        // 4. Content type — xlsx yoki zip
+        MediaType contentType = filePathStr.endsWith(".zip")
+                ? MediaType.parseMediaType("application/zip")
+                : MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         "attachment; filename=\"" + filePath.getFileName().toString() + "\"")
-                .contentType(MediaType.parseMediaType(
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .contentType(contentType)
                 .body(resource);
     }
 }

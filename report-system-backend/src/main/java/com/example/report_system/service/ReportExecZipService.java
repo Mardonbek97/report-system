@@ -23,18 +23,24 @@ import java.nio.ByteBuffer;
 import java.sql.*;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 @Service
-public class ReportExecService {
+public class ReportExecZipService {
 
     private final ReportRepository reportRepository;
     private final JdbcTemplate jdbcTemplate;
     private final ExcelExportService excelExportService;
-    private final DataSource dataSource; //
+    private final DataSource dataSource;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final UserRepository userRepository;
 
-    public ReportExecService(ReportRepository reportRepository, JdbcTemplate jdbcTemplate, ExcelExportService excelExportService, DataSource dataSource, UserRepository userRepository) {
+    public ReportExecZipService(ReportRepository reportRepository,
+                                JdbcTemplate jdbcTemplate,
+                                ExcelExportService excelExportService,
+                                DataSource dataSource,
+                                UserRepository userRepository) {
         this.reportRepository = reportRepository;
         this.jdbcTemplate = jdbcTemplate;
         this.excelExportService = excelExportService;
@@ -42,14 +48,14 @@ public class ReportExecService {
         this.userRepository = userRepository;
     }
 
-    //Upgraeded new version due to getting default value
-    public List<ReportParamsExecDto> getParams(UUID repId) {
+    private static final int MAX_ROWS_PER_FILE = 2_000;
 
+    // ── Params ────────────────────────────────────────────
+    public List<ReportParamsExecDto> getParams(UUID repId) {
         List<ReportParamsDto> rawList = reportRepository.findByIdParams(repId);
 
         return rawList.stream()
                 .map(p -> {
-
                     String defaultVal = null;
                     List<Map<String, Object>> options = null;
                     String sql = p.defaultValue();
@@ -57,7 +63,6 @@ public class ReportExecService {
                     if (sql != null && !sql.isBlank()) {
                         try {
                             List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql);
-
                             if (rows.size() == 1 && rows.get(0).size() == 1) {
                                 defaultVal = String.valueOf(rows.get(0).values().iterator().next());
                             } else {
@@ -65,43 +70,46 @@ public class ReportExecService {
                                     Map<String, Object> item = new LinkedHashMap<>();
                                     List<Map.Entry<String, Object>> entries = new ArrayList<>(row.entrySet());
                                     item.put("id", entries.get(0).getValue());
-                                    item.put("name", entries.size() > 1 ? entries.get(1).getValue() : entries.get(0).getValue());
+                                    item.put("name", entries.size() > 1
+                                            ? entries.get(1).getValue()
+                                            : entries.get(0).getValue());
                                     return item;
                                 }).collect(Collectors.toList());
                             }
                         } catch (Exception e) {
+                            System.out.println("=== DEF_VALUE SQL xato: " + e.getMessage());
                         }
                     }
 
-                    return new ReportParamsExecDto(p.paramName(), p.paramType(), p.paramView(), defaultVal, options);
+                    return new ReportParamsExecDto(
+                            p.paramName(), p.paramType(), p.paramView(), defaultVal, options);
                 })
                 .collect(Collectors.toList());
     }
 
-
-
-    public byte[] executeAndExport(ExecuteReportRequestDto request) throws Exception {
+    // ── Execute & Export ──────────────────────────────────
+    public byte[] executeAndExportZip(ExecuteReportRequestDto request) throws Exception {
         Optional<Users> user = userRepository.findByUsername(request.username());
         Optional<Reports> report = reportRepository.findById(request.repId());
         String templatePath = report.get().getTemplate();
+        String baseName = templatePath.contains(".")
+                ? templatePath.substring(0, templatePath.lastIndexOf("."))
+                : templatePath;
 
-        // Bitta connection ichida procedure + select
         try (Connection conn = dataSource.getConnection()) {
-            Map<Integer, Map<String, Object>> rowsMap = new HashMap<>();
+            Map<Integer, Map<String, Object>> rowsMap = new LinkedHashMap<>();
 
-            // 1. Procedure run - shu connection da temp table ga yozadi
+            // 1. Procedure run
             String sql = "BEGIN REP_CORE_UTIL.EXECUTE_PROC(HEXTORAW(?), ?, ?, ?); END;";
             try (CallableStatement stmt = conn.prepareCall(sql)) {
-
                 String hexUuid = request.repId().toString().replace("-", "").toUpperCase();
                 stmt.setString(1, hexUuid);
                 stmt.setLong(2, user.get().getId());
 
-                // Param definitionlarni olib JSON quramiz
-                List<ReportParamsDto> paramDefs = reportRepository
-                        .findByIdParams(request.repId())
+                List<ReportParamsDto> paramDefs = reportRepository.findByIdParams(request.repId())
                         .stream()
-                        .map(p -> new ReportParamsDto(p.paramName(), p.paramType(), p.paramView(), p.defaultValue()))
+                        .map(p -> new ReportParamsDto(
+                                p.paramName(), p.paramType(), p.paramView(), p.defaultValue()))
                         .collect(Collectors.toUnmodifiableList());
 
                 String paramsJson = buildParamsJson(paramDefs, request.params());
@@ -115,52 +123,87 @@ public class ReportExecService {
                 }
             }
 
-            // 2. Shu connection da temp tabladan o'qiymiz
-            List<Map<String, Object>> jsonRows = new ArrayList<>();
+            // 2. Temp tabladan o'qiymiz — Oracle ROW_NUMBER saqlanadi
             try (PreparedStatement ps = conn.prepareStatement(
                     "SELECT ROW_NUMBER, DATA FROM REP_CORE_TMP ORDER BY 1");
                  ResultSet rs = ps.executeQuery()) {
-
                 while (rs.next()) {
                     int rowNumber = rs.getInt("ROW_NUMBER");
                     String jsonStr = rs.getString("DATA");
-                    //System.out.println(jsonStr);
                     Map<String, Object> jsonData = objectMapper.readValue(
                             jsonStr, new TypeReference<Map<String, Object>>() {
-                            }
-                    );
+                            });
                     rowsMap.put(rowNumber, jsonData);
                 }
             }
 
-            // 3. Excel generate qilamiz
-            return generateExcel(templatePath, rowsMap);
+            int totalRows = rowsMap.size();
+            System.out.println("=== Jami qatorlar: " + totalRows);
+
+            int fileCount = (int) Math.ceil((double) totalRows / MAX_ROWS_PER_FILE);
+            System.out.println("=== Fayllar soni: " + fileCount);
+
+            // 3. Bitta fayl
+            if (fileCount <= 1) {
+                byte[] excelBytes = generateExcel(templatePath, rowsMap);
+                return wrapInZip(List.of(Map.entry(baseName + ".xlsx", excelBytes)));
+            }
+
+            // 4. Ko'p fayl — Oracle row number saqlab bo'lamiz
+            List<Map.Entry<String, byte[]>> files = new ArrayList<>();
+            List<Map.Entry<Integer, Map<String, Object>>> allEntries =
+                    new ArrayList<>(rowsMap.entrySet());
+
+            for (int i = 0; i < fileCount; i++) {
+                int fromIndex = i * MAX_ROWS_PER_FILE;
+                int toIndex = Math.min(fromIndex + MAX_ROWS_PER_FILE, totalRows);
+
+                // ✅ Oracle original row number saqlanadi
+                Map<Integer, Map<String, Object>> partMap = new LinkedHashMap<>();
+                List<Map.Entry<Integer, Map<String, Object>>> partEntries =
+                        allEntries.subList(fromIndex, toIndex);
+
+                for (Map.Entry<Integer, Map<String, Object>> e : partEntries) {
+                    partMap.put(e.getKey(), e.getValue());
+                }
+
+                byte[] excelBytes = generateExcel(templatePath, partMap);
+                files.add(Map.entry(baseName + "_" + (i + 1) + ".xlsx", excelBytes));
+                System.out.println("=== Part " + (i + 1) + " yaratildi: "
+                        + partMap.size() + " qator"
+                        + " (row " + partEntries.get(0).getKey()
+                        + " → " + partEntries.get(partEntries.size() - 1).getKey() + ")");
+            }
+
+            // 5. Zip
+            return wrapInZip(files);
 
         } catch (Exception e) {
             throw new RuntimeException("Xato: " + e.getMessage(), e);
         }
     }
 
-    private byte[] generateExcel(String templatePath, Map<Integer, Map<String, Object>> rowsMap) throws Exception {
-
+    // ── Generate Excel ────────────────────────────────────
+    private byte[] generateExcel(String templatePath,
+                                 Map<Integer, Map<String, Object>> rowsMap) throws Exception {
         try (InputStream fis = new ClassPathResource("templates/" + templatePath).getInputStream()) {
             Workbook workbook = new XSSFWorkbook(fis);
-
             Sheet sheet = workbook.getSheetAt(0);
+
             int templateRowIndex = findDataStartRow(sheet);
             Row templateRow = sheet.getRow(templateRowIndex);
 
-            // Har bir ROW_NUMBER ga yozamiz
+
+            int baseOffset = rowsMap.keySet().iterator().next() - 1;
+
             for (Map.Entry<Integer, Map<String, Object>> entry : rowsMap.entrySet()) {
-                int excelRowIndex = entry.getKey();  // ← Oracle dan kelgan ROW_NUMBER
+                int excelRowIndex = templateRowIndex + (entry.getKey() - baseOffset);
                 Map<String, Object> jsonData = entry.getValue();
 
-
-                Row dataRow = sheet.createRow(excelRowIndex);  // ← aniq o'sha qatorga
+                Row dataRow = sheet.createRow(excelRowIndex);
                 writeRowData(dataRow, jsonData, templateRow);
             }
 
-            // Template o'chirish
             sheet.removeRow(templateRow);
 
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
@@ -169,6 +212,7 @@ public class ReportExecService {
         }
     }
 
+    // ── Find template row ─────────────────────────────────
     private int findDataStartRow(Sheet sheet) {
         for (Row row : sheet) {
             for (Cell cell : row) {
@@ -183,7 +227,10 @@ public class ReportExecService {
         return 1;
     }
 
-    private void writeRowData(Row targetRow, Map<String, Object> jsonData, Row templateRow) {
+    // ── Write row data ────────────────────────────────────
+    private void writeRowData(Row targetRow,
+                              Map<String, Object> jsonData,
+                              Row templateRow) {
         if (templateRow == null) return;
         for (Cell templateCell : templateRow) {
             if (templateCell.getCellType() != CellType.STRING) continue;
@@ -206,47 +253,47 @@ public class ReportExecService {
         }
     }
 
-    private Row getOrCreateRow(Sheet sheet, int rowIndex) {
-        Row row = sheet.getRow(rowIndex);
-        return row != null ? row : sheet.createRow(rowIndex);
+    // ── Wrap in ZIP ───────────────────────────────────────
+    private byte[] wrapInZip(List<Map.Entry<String, byte[]>> files) throws Exception {
+        ByteArrayOutputStream zipBos = new ByteArrayOutputStream();
+        try (ZipOutputStream zos = new ZipOutputStream(zipBos)) {
+            for (Map.Entry<String, byte[]> file : files) {
+                ZipEntry entry = new ZipEntry(file.getKey());
+                zos.putNextEntry(entry);
+                zos.write(file.getValue());
+                zos.closeEntry();
+            }
+        }
+        return zipBos.toByteArray();
     }
 
+    // ── Build params JSON ─────────────────────────────────
     private String buildParamsJson(List<ReportParamsDto> paramDefs,
                                    Map<String, String> frontendValues) {
         StringBuilder json = new StringBuilder("{");
-
         for (int i = 0; i < paramDefs.size(); i++) {
             ReportParamsDto def = paramDefs.get(i);
             String rawValue = frontendValues.get(def.paramName());
             String convertedValue = convertValue(def.paramType(), rawValue);
-
             json.append("\"").append(def.paramName()).append("\":");
             json.append(convertedValue);
-
             if (i < paramDefs.size() - 1) json.append(",");
         }
-
         json.append("}");
         return json.toString();
     }
 
+    // ── Convert value ─────────────────────────────────────
     private String convertValue(String type, String value) {
-        if (value == null || value.isBlank()) {
-            return "null";
-        }
-
+        if (value == null || value.isBlank()) return "null";
         return switch (type.toLowerCase()) {
-            // String va Date - qo'shtirnoq bilan
             case "date", "varchar2", "varchar", "string" -> "\"" + value + "\"";
-            // Number - qo'shtirnoqsiz
             case "number", "integer", "int" -> value;
             default -> "\"" + value + "\"";
         };
     }
 
-    /**
-     * UUID ni Oracle RAW tipiga convert qiladi
-     */
+    // ── UUID to bytes ─────────────────────────────────────
     private byte[] uuidToBytes(UUID uuid) {
         ByteBuffer bb = ByteBuffer.wrap(new byte[16]);
         bb.putLong(uuid.getMostSignificantBits());
@@ -254,5 +301,8 @@ public class ReportExecService {
         return bb.array();
     }
 
-
+    private Row getOrCreateRow(Sheet sheet, int rowIndex) {
+        Row row = sheet.getRow(rowIndex);
+        return row != null ? row : sheet.createRow(rowIndex);
+    }
 }

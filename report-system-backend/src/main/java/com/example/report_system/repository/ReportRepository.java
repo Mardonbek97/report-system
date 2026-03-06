@@ -1,6 +1,7 @@
 package com.example.report_system.repository;
 
 import com.example.report_system.dto.ReportParamsDto;
+import com.example.report_system.dto.ReportParamsExecDto;
 import com.example.report_system.entity.Reports;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -20,7 +21,7 @@ public interface ReportRepository extends JpaRepository<Reports, Long> {
     @Query(value = "SELECT * FROM REP_CORE_NAME WHERE id = :uuid", nativeQuery = true)
     Optional<Reports> findById(@Param("uuid") UUID uuid);
 
-    @Query(value = "SELECT P.PARAM_NAME, P.PARAM_TYPE, P.PARAM_VIEW \n" +
+    @Query(value = "SELECT P.PARAM_NAME, P.PARAM_TYPE, P.PARAM_VIEW, P.DEF_VALUE \n" +
                     " FROM REP_CORE_NAME T\n" +
                     "LEFT JOIN REP_CORE_PARAMS P \n" +
                     "ON T.ID = P.REP_ID\n" +
@@ -28,4 +29,5 @@ public interface ReportRepository extends JpaRepository<Reports, Long> {
                     "\n" +
                     "ORDER BY P.PARAM_ORDER", nativeQuery = true)
     List<ReportParamsDto> findByIdParams(@Param("uuid") UUID uuid);
+
 }

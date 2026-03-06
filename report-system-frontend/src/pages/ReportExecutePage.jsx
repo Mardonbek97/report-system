@@ -10,7 +10,6 @@ const authHeaders = () => {
   };
 };
 
-// Oracle + standard type → input type mapping
 const resolveInputType = (paramType) => {
   if (!paramType) return "text";
   const t = paramType.toUpperCase().trim();
@@ -24,10 +23,32 @@ const resolveInputType = (paramType) => {
   return "text";
 };
 
-// ── Single param input component ─────────────────────────
+// dd.MM.yyyy → yyyy-MM-dd (input type=date uchun)
+const toInputDate = (val) => {
+  if (!val) return "";
+  // Allaqachon yyyy-MM-dd formatda bo'lsa
+  if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+  // dd.MM.yyyy formatdan convert
+  const parts = val.split(".");
+  if (parts.length === 3) return `${parts[2]}-${parts[1]}-${parts[0]}`;
+  return val;
+};
+
+// yyyy-MM-dd → dd.MM.yyyy (backendga yuborish uchun)
+const toBackendDate = (val) => {
+  if (!val) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(val)) {
+    const [y, m, d] = val.split("-");
+    return `${d}.${m}.${y}`;
+  }
+  return val;
+};
+
+// ── Param Input ───────────────────────────────────────────
 const ParamInput = ({ param, value, onChange, hasError }) => {
   const type = resolveInputType(param.paramType);
   const label = param.paramView || param.paramName;
+  const hasOptions = Array.isArray(param.options) && param.options.length > 0;
 
   const base = {
     width: "100%", boxSizing: "border-box",
@@ -35,9 +56,28 @@ const ParamInput = ({ param, value, onChange, hasError }) => {
     borderRadius: 10, padding: "11px 14px", fontSize: 14,
     color: "#0f172a", background: hasError ? "#fff8f8" : "#fafafa",
     outline: "none", fontFamily: "inherit",
-    transition: "border-color 0.15s, box-shadow 0.15s",
+    transition: "border-color 0.15s",
   };
 
+  // ── Dropdown ──
+  if (hasOptions) {
+    return (
+      <select
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+        style={{ ...base, cursor: "pointer" }}
+      >
+        <option value="">— Tanlang —</option>
+        {param.options.map((opt) => (
+          <option key={String(opt.id)} value={String(opt.id)}>
+            {opt.name}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  // ── Boolean ──
   if (type === "boolean") {
     return (
       <div style={{ display: "flex", gap: 10 }}>
@@ -60,12 +100,70 @@ const ParamInput = ({ param, value, onChange, hasError }) => {
     );
   }
 
+  // ── Date — dd.MM.yyyy mask + calendar picker ──
+  if (type === "date") {
+    const toISO = (v) => {
+      if (!v) return "";
+      if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+      const p = v.split(".");
+      if (p.length === 3) return `${p[2]}-${p[1]}-${p[0]}`;
+      return "";
+    };
+    const fromISO = (v) => {
+      if (!v) return "";
+      const [y, m, d] = v.split("-");
+      return `${d}.${m}.${y}`;
+    };
+    const handleTextInput = (e) => {
+      let raw = e.target.value.replace(/\D/g, "");
+      if (raw.length > 8) raw = raw.slice(0, 8);
+      let fmt = raw;
+      if (raw.length >= 3 && raw.length <= 4) fmt = raw.slice(0, 2) + "." + raw.slice(2);
+      else if (raw.length >= 5) fmt = raw.slice(0, 2) + "." + raw.slice(2, 4) + "." + raw.slice(4);
+      onChange(fmt);
+    };
+
+    return (
+      <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+        <input
+          type="text"
+          value={value || ""}
+          onChange={handleTextInput}
+          placeholder="DD.MM.YYYY"
+          maxLength={10}
+          style={{ ...base, paddingRight: 42 }}
+        />
+        <span
+          title="Kalendar"
+          style={{
+            position: "absolute", right: 10, cursor: "pointer",
+            display: "flex", alignItems: "center", color: "#94a3b8",
+            userSelect: "none",
+          }}
+          onClick={() => {
+            const inp = document.getElementById("hidden-date-" + param.paramName);
+            if (inp) inp.showPicker?.();
+          }}
+        >
+          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8}
+              d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+        </span>
+        <input
+          id={"hidden-date-" + param.paramName}
+          type="date"
+          value={toISO(value)}
+          onChange={(e) => onChange(fromISO(e.target.value))}
+          style={{ position: "absolute", opacity: 0, width: 0, height: 0, pointerEvents: "none" }}
+          tabIndex={-1}
+        />
+      </div>
+    );
+  }
+
   if (type === "datetime") return (
     <input type="datetime-local" value={value || ""} onChange={(e) => onChange(e.target.value)} style={base} />
-  );
-
-  if (type === "date") return (
-    <input type="date" value={value || ""} onChange={(e) => onChange(e.target.value)} style={base} />
   );
 
   if (type === "number") return (
@@ -94,13 +192,10 @@ const ReportExecutePage = () => {
   const [execError, setExecError] = useState("");
 
   const [result, setResult] = useState(null);
-  const [resultCols, setResultCols] = useState([]);
-  const [resultSearch, setResultSearch] = useState("");
-
   const [downloadLoading, setDownloadLoading] = useState(false);
   const [downloadError, setDownloadError] = useState("");
 
-  // ── Load report name & params ────────────────────────
+  // ── Load params ───────────────────────────────────────
   useEffect(() => {
     if (!repId) { setParamsError("repId topilmadi"); setParamsLoading(false); return; }
 
@@ -123,8 +218,12 @@ const ReportExecutePage = () => {
         if (!res.ok) throw new Error("Parametrlarni yuklashda xatolik");
         const data = await res.json();
         setParams(data);
+
         const init = {};
-        data.forEach((p) => { init[p.paramName] = ""; });
+        data.forEach((p) => {
+          // dd.MM.yyyy formatida keladi — o'zgartirishsiz saqlaymiz
+          init[p.paramName] = p.defaultValue != null ? String(p.defaultValue) : "";
+        });
         setParamValues(init);
       } catch (err) {
         setParamsError(err.message);
@@ -135,27 +234,25 @@ const ReportExecutePage = () => {
     fetchParams();
   }, [repId]);
 
-  // ── Field change ─────────────────────────────────────
+  // ── Handlers ─────────────────────────────────────────
   const handleChange = (name, value) => {
     setParamValues((prev) => ({ ...prev, [name]: value }));
     setFieldErrors((prev) => ({ ...prev, [name]: false }));
     setExecError("");
   };
 
-  // ── Reset ────────────────────────────────────────────
   const handleReset = () => {
     const init = {};
-    params.forEach((p) => { init[p.paramName] = ""; });
+    params.forEach((p) => {
+      init[p.paramName] = p.defaultValue != null ? String(p.defaultValue) : "";
+    });
     setParamValues(init);
     setFieldErrors({});
     setExecError("");
     setResult(null);
-    setResultCols([]);
-    setResultSearch("");
     setDownloadError("");
   };
 
-  // ── Execute ──────────────────────────────────────────
   const handleExecute = async () => {
     const errors = {};
     params.forEach((p) => {
@@ -170,27 +267,27 @@ const ReportExecutePage = () => {
     setExecLoading(true);
     setExecError("");
     setResult(null);
-    setResultCols([]);
-    setResultSearch("");
     setDownloadError("");
 
     try {
       const stringParams = {};
-      Object.entries(paramValues).forEach(([k, v]) => { stringParams[k] = String(v); });
+      params.forEach((p) => {
+        // dd.MM.yyyy formatida saqlanadi — o'zgartirishsiz yuboramiz
+        stringParams[p.paramName] = String(paramValues[p.paramName]);
+      });
 
       const res = await fetch("http://localhost:8080/api/reports/generate", {
         method: "POST",
         headers: authHeaders(),
         body: JSON.stringify({
           username: localStorage.getItem("username") || "",
-          repId: repId,
+          repId,
           params: stringParams,
         }),
       });
 
       const text = await res.text();
       if (!res.ok) throw new Error(text || "Xatolik yuz berdi");
-
       setResult(text.replace(/^Fayl saqlandi:\s*/i, "").trim());
     } catch (err) {
       setExecError(err.message);
@@ -199,7 +296,7 @@ const ReportExecutePage = () => {
     }
   };
 
-  // ── Download (fetch + Authorization header) ──────────
+  // ── Download ──────────────────────────────────────────
   const handleDownload = async (filePath) => {
     setDownloadLoading(true);
     setDownloadError("");
@@ -207,16 +304,9 @@ const ReportExecutePage = () => {
       const token = localStorage.getItem("token");
       const res = await fetch(
         `http://localhost:8080/api/reports/download?path=${encodeURIComponent(filePath)}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Accept-Language": "UZ",
-          },
-        }
+        { headers: { Authorization: `Bearer ${token}`, "Accept-Language": "UZ" } }
       );
-
       if (!res.ok) throw new Error("Yuklab olishda xatolik: " + res.status);
-
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -233,34 +323,25 @@ const ReportExecutePage = () => {
     }
   };
 
-  // ── Filter result rows ───────────────────────────────
-  const filteredRows = Array.isArray(result)
-    ? result.filter((row) =>
-        !resultSearch ||
-        Object.values(row).some((v) =>
-          String(v ?? "").toLowerCase().includes(resultSearch.toLowerCase())
-        )
-      )
-    : null;
-
-  // ── Render ───────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────
   return (
-    <div style={p.page}>
+    <div style={s.page}>
 
       {/* Top bar */}
-      <div style={p.topBar}>
-        <div style={p.topLeft}>
-          <div style={p.topIcon}>
+      <div style={s.topBar}>
+        <div style={s.topLeft}>
+          <div style={s.topIcon}>
             <svg width="17" height="17" fill="none" viewBox="0 0 24 24" stroke="#2563eb">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
           </div>
           <div>
-            <div style={p.topName}>{reportName}</div>
-            <div style={p.topSub}>Report bajarish sahifasi</div>
+            <div style={s.topName}>{reportName}</div>
+            <div style={s.topSub}>Report bajarish sahifasi</div>
           </div>
         </div>
-        <button style={p.closeBtn} onClick={() => window.close()}>
+        <button style={s.closeBtn} onClick={() => window.close()}>
           <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
           </svg>
@@ -268,86 +349,95 @@ const ReportExecutePage = () => {
         </button>
       </div>
 
-      {/* Body */}
-      <div style={p.body}>
+      <div style={s.body}>
 
-        {/* ── Params Card ── */}
-        <div style={p.card}>
-          <div style={p.cardHead}>
-            <div style={p.cardHeadIcon}>
+        {/* Params Card */}
+        <div style={s.card}>
+          <div style={s.cardHead}>
+            <div style={s.cardHeadIcon}>
               <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="#7c3aed">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
               </svg>
             </div>
-            <span style={p.cardTitle}>Parametrlar</span>
+            <span style={s.cardTitle}>Parametrlar</span>
             {!paramsLoading && !paramsError && (
-              <span style={p.badge}>{params.length} ta</span>
+              <span style={s.badge}>{params.length} ta</span>
             )}
           </div>
 
           {paramsLoading ? (
-            <div style={p.centered}>
-              <div style={p.spinner} />
-              <span style={p.hint}>Parametrlar yuklanmoqda...</span>
+            <div style={s.centered}>
+              <div style={s.spinner} />
+              <span style={s.hint}>Parametrlar yuklanmoqda...</span>
             </div>
           ) : paramsError ? (
-            <div style={p.errMsg}>⚠ {paramsError}</div>
+            <div style={s.errMsg}>⚠ {paramsError}</div>
           ) : params.length === 0 ? (
-            <div style={p.centered}>
-              <svg width="38" height="38" fill="none" viewBox="0 0 24 24" stroke="#e2e8f0" style={{ display: "block", margin: "0 auto 10px" }}>
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-              </svg>
-              <span style={p.hint}>Bu report uchun parametr yo'q — to'g'ridan-to'g'ri ishga tushiring</span>
+            <div style={s.centered}>
+              <span style={s.hint}>Bu report uchun parametr yo'q — to'g'ridan-to'g'ri ishga tushiring</span>
             </div>
           ) : (
-            <div style={p.paramsGrid}>
-              {params.map((param, idx) => (
-                <div key={param.paramName} style={p.fieldWrap}>
-                  <div style={p.labelRow}>
-                    <span style={p.orderBadge}>{idx + 1}</span>
-                    <label style={p.fieldLabel}>{param.paramView || param.paramName}</label>
-                    <span style={p.typeBadge}>{param.paramType}</span>
-                    {fieldErrors[param.paramName] && (
-                      <span style={p.reqBadge}>Majburiy</span>
-                    )}
+            <div style={s.paramsGrid}>
+              {params.map((param, idx) => {
+                const isDropdown = Array.isArray(param.options) && param.options.length > 0;
+                return (
+                  <div key={param.paramName} style={s.fieldWrap}>
+                    <div style={s.labelRow}>
+                      <span style={s.orderBadge}>{idx + 1}</span>
+                      <label style={s.fieldLabel}>{param.paramView || param.paramName}</label>
+                      <span style={{
+                        ...s.typeBadge,
+                        background: isDropdown ? "#eff6ff" : "#f1f5f9",
+                        color: isDropdown ? "#2563eb" : "#64748b",
+                      }}>
+                        {isDropdown ? "ro'yxat" : param.paramType}
+                      </span>
+                      {fieldErrors[param.paramName] && (
+                        <span style={s.reqBadge}>Majburiy</span>
+                      )}
+                    </div>
+                    <ParamInput
+                      param={param}
+                      value={paramValues[param.paramName] || ""}
+                      onChange={(val) => handleChange(param.paramName, val)}
+                      hasError={!!fieldErrors[param.paramName]}
+                    />
                   </div>
-                  <ParamInput
-                    param={param}
-                    value={paramValues[param.paramName] || ""}
-                    onChange={(val) => handleChange(param.paramName, val)}
-                    hasError={!!fieldErrors[param.paramName]}
-                  />
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
           {execError && (
-            <div style={{ ...p.errMsg, margin: "0 20px 16px" }}>⚠ {execError}</div>
+            <div style={{ ...s.errMsg, margin: "0 20px 16px" }}>⚠ {execError}</div>
           )}
 
           {!paramsLoading && !paramsError && (
-            <div style={p.actions}>
-              <button style={p.resetBtn} onClick={handleReset} disabled={execLoading}>
+            <div style={s.actions}>
+              <button style={s.resetBtn} onClick={handleReset} disabled={execLoading}>
                 <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
                 Tozalash
               </button>
               <button
-                style={{ ...p.execBtn, opacity: execLoading ? 0.7 : 1 }}
+                style={{ ...s.execBtn, opacity: execLoading ? 0.7 : 1 }}
                 onClick={handleExecute}
                 disabled={execLoading}
               >
                 {execLoading ? (
                   <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={p.btnSpinner} /> Bajarilmoqda...
+                    <span style={s.btnSpinner} /> Bajarilmoqda...
                   </span>
                 ) : (
                   <>
                     <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     Ishga tushirish
                   </>
@@ -357,44 +447,44 @@ const ReportExecutePage = () => {
           )}
         </div>
 
-        {/* ── Result Card ── */}
+        {/* Result Card */}
         {result !== null && (
-          <div style={p.card}>
-            <div style={p.cardHead}>
-              <div style={{ ...p.cardHeadIcon, background: "#f0fdf4" }}>
+          <div style={s.card}>
+            <div style={s.cardHead}>
+              <div style={{ ...s.cardHeadIcon, background: "#f0fdf4" }}>
                 <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="#16a34a">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
-              <span style={p.cardTitle}>Natija</span>
-              <span style={{ ...p.badge, background: "#dcfce7", color: "#16a34a" }}>Muvaffaqiyatli</span>
+              <span style={s.cardTitle}>Natija</span>
+              <span style={{ ...s.badge, background: "#dcfce7", color: "#16a34a" }}>Muvaffaqiyatli</span>
             </div>
 
-            <div style={p.successBox}>
-              <div style={p.excelIcon}>
+            <div style={s.successBox}>
+              <div style={s.excelIcon}>
                 <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="#16a34a">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8}
                     d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
               </div>
-              <div style={p.successText}>
-                <div style={p.successTitle}>Excel fayl yaratildi!</div>
-                <div style={p.successPath}>{result}</div>
+              <div style={s.successText}>
+                <div style={s.successTitle}>Excel fayl yaratildi!</div>
+                <div style={s.successPath}>{result}</div>
 
                 {downloadError && (
-                  <div style={{ ...p.errMsg, marginTop: 10 }}>⚠ {downloadError}</div>
+                  <div style={{ ...s.errMsg, marginTop: 10 }}>⚠ {downloadError}</div>
                 )}
 
                 <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
-                  {/* ✅ fetch + Authorization header bilan yuklab olish */}
                   <button
-                    style={{ ...p.downloadBtn, opacity: downloadLoading ? 0.7 : 1 }}
+                    style={{ ...s.downloadBtn, opacity: downloadLoading ? 0.7 : 1 }}
                     onClick={() => handleDownload(result)}
                     disabled={downloadLoading}
                   >
                     {downloadLoading ? (
                       <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <span style={p.btnSpinner} /> Yuklanmoqda...
+                        <span style={s.btnSpinner} /> Yuklanmoqda...
                       </span>
                     ) : (
                       <>
@@ -407,10 +497,9 @@ const ReportExecutePage = () => {
                     )}
                   </button>
 
-                  {/* Clipboard copy */}
                   <button
                     id="copy-path-btn"
-                    style={p.copyBtn}
+                    style={s.copyBtn}
                     onClick={() => {
                       navigator.clipboard.writeText(result).then(() => {
                         const btn = document.getElementById("copy-path-btn");
@@ -437,8 +526,8 @@ const ReportExecutePage = () => {
   );
 };
 
-// ── Styles ───────────────────────────────────────────────
-const p = {
+// ── Styles ────────────────────────────────────────────────
+const s = {
   page: { minHeight: "100vh", background: "#f1f5f9", fontFamily: "'Segoe UI', system-ui, sans-serif" },
   topBar: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 28px", background: "#fff", borderBottom: "1px solid #e2e8f0", boxShadow: "0 1px 4px rgba(0,0,0,0.05)", position: "sticky", top: 0, zIndex: 100 },
   topLeft: { display: "flex", alignItems: "center", gap: 12 },
@@ -457,7 +546,7 @@ const p = {
   labelRow: { display: "flex", alignItems: "center", gap: 7, marginBottom: 8, flexWrap: "wrap" },
   orderBadge: { width: 22, height: 22, borderRadius: "50%", background: "#ede9fe", color: "#7c3aed", fontSize: 11, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
   fieldLabel: { fontSize: 14, fontWeight: 600, color: "#1e293b" },
-  typeBadge: { marginLeft: "auto", display: "inline-block", padding: "1px 7px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: "#f1f5f9", color: "#64748b" },
+  typeBadge: { marginLeft: "auto", display: "inline-block", padding: "1px 7px", borderRadius: 6, fontSize: 10, fontWeight: 700 },
   reqBadge: { display: "inline-block", padding: "1px 7px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: "#fef2f2", color: "#dc2626" },
   actions: { display: "flex", gap: 12, justifyContent: "flex-end", padding: "14px 20px", borderTop: "1px solid #f1f5f9", background: "#fafafa" },
   resetBtn: { display: "inline-flex", alignItems: "center", gap: 6, border: "1.5px solid #e2e8f0", background: "#fff", borderRadius: 10, padding: "9px 20px", fontSize: 14, color: "#64748b", cursor: "pointer", fontWeight: 600 },
