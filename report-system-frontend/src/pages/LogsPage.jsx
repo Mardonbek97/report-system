@@ -1,11 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 
 const STATUS_CONFIG = {
-  SUCCESS:    { color: "#22c55e", bg: "#f0fdf4", border: "#bbf7d0", label: "Muvaffaqiyat" },
-  RUNNING:    { color: "#3b82f6", bg: "#eff6ff", border: "#bfdbfe", label: "Jarayonda"   },
-  ERROR:      { color: "#ef4444", bg: "#fef2f2", border: "#fecaca", label: "Xatolik"     },
-  PENDING:    { color: "#f59e0b", bg: "#fffbeb", border: "#fde68a", label: "Kutilmoqda"  },
-  CANCELLED:  { color: "#8b5cf6", bg: "#f5f3ff", border: "#ddd6fe", label: "Bekor qilindi" },
+  Running:  { color: "#3b82f6", bg: "#eff6ff", border: "#bfdbfe", label: "Jarayonda"   },
+  Finished: { color: "#22c55e", bg: "#f0fdf4", border: "#bbf7d0", label: "Muvaffaqiyat" },
+  Error:    { color: "#ef4444", bg: "#fef2f2", border: "#fecaca", label: "Xatolik"     },
 };
 
 const fmt = (dt) => {
@@ -25,7 +23,6 @@ const duration = (begin, end) => {
   return `${Math.floor(s / 60)}m ${s % 60}s`;
 };
 
-// ── Role helper ──────────────────────────────────────────
 const getRole = () => {
   try {
     const token = localStorage.getItem("token");
@@ -47,8 +44,8 @@ const StatusBadge = ({ status }) => {
     }}>
       <span style={{
         width: 6, height: 6, borderRadius: "50%", background: cfg.color,
-        boxShadow: status === "RUNNING" ? `0 0 0 3px ${cfg.border}` : "none",
-        animation: status === "RUNNING" ? "logPulse 1.4s ease-in-out infinite" : "none",
+        boxShadow: status === "Running" ? `0 0 0 3px ${cfg.border}` : "none",
+        animation: status === "Running" ? "logPulse 1.4s ease-in-out infinite" : "none",
       }} />
       {cfg.label}
     </span>
@@ -69,30 +66,100 @@ const ProgressBar = ({ percentage }) => {
   );
 };
 
+// ── Pagination ────────────────────────────────────────────
+const Pagination = ({ page, totalPages, totalElements, onPageChange }) => {
+  if (totalPages <= 1) return null;
+
+  const pages = [];
+  const delta = 1;
+  const left  = page - delta;
+  const right = page + delta;
+
+  for (let i = 0; i < totalPages; i++) {
+    if (i === 0 || i === totalPages - 1 || (i >= left && i <= right)) {
+      pages.push(i);
+    } else if (i === left - 1 || i === right + 1) {
+      pages.push("...");
+    }
+  }
+
+  // deduplicate "..."
+  const dedupPages = pages.filter((p, i) => p !== "..." || pages[i - 1] !== "...");
+
+  return (
+    <div style={ps.wrap}>
+      <span style={ps.info}>
+        Jami: <strong>{totalElements}</strong> ta
+      </span>
+      <div style={ps.btns}>
+        <button
+          onClick={() => onPageChange(page - 1)}
+          disabled={page === 0}
+          style={{ ...ps.btn, ...(page === 0 ? ps.disabled : {}) }}
+        >‹</button>
+
+        {dedupPages.map((p, i) =>
+          p === "..." ? (
+            <span key={`dots-${i}`} style={ps.dots}>…</span>
+          ) : (
+            <button
+              key={p}
+              onClick={() => onPageChange(p)}
+              style={{ ...ps.btn, ...(p === page ? ps.active : {}) }}
+            >{p + 1}</button>
+          )
+        )}
+
+        <button
+          onClick={() => onPageChange(page + 1)}
+          disabled={page >= totalPages - 1}
+          style={{ ...ps.btn, ...(page >= totalPages - 1 ? ps.disabled : {}) }}
+        >›</button>
+      </div>
+    </div>
+  );
+};
+
+const ps = {
+  wrap:     { display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14, flexWrap: "wrap", gap: 8 },
+  info:     { fontSize: 13, color: "#94a3b8" },
+  btns:     { display: "flex", gap: 4, alignItems: "center" },
+  btn:      { minWidth: 34, height: 34, borderRadius: 8, border: "1.5px solid #e2e8f0", background: "#fff", color: "#334155", fontSize: 13, fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" },
+  active:   { background: "#2563eb", color: "#fff", border: "1.5px solid #2563eb", fontWeight: 700 },
+  disabled: { opacity: 0.35, cursor: "not-allowed" },
+  dots:     { padding: "0 4px", color: "#94a3b8", fontSize: 13 },
+};
+
 // ════════════════════════════════════════════════════════
+const PAGE_SIZE = 18;
+
 const ReportLogsPage = () => {
   const isAdmin = getRole() === "ROLE_ADMIN";
   const currentUser = localStorage.getItem("username") || "";
 
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
+  const [logs, setLogs]           = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState("");
+  const [search, setSearch]       = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
-  const [expandedRow, setExpandedRow] = useState(null);
+  const [expandedRow, setExpandedRow]   = useState(null);
+  const [username, setUsername]   = useState(currentUser);
 
-  // Admin: username o'zgartira oladi. User: faqat o'zini ko'radi
-  const [username, setUsername] = useState(currentUser);
+  // Pagination state
+  const [page, setPage]           = useState(0);
+  const [totalPages, setTotalPages]     = useState(0);
+  const [totalElements, setTotalElements] = useState(0);
+
   const inputRef = useRef();
 
-  const fetchLogs = async (uname) => {
+  const fetchLogs = async (uname, p = 0) => {
     const queryUser = isAdmin ? (uname ?? username) : currentUser;
     setLoading(true);
     setError("");
     try {
       const token = localStorage.getItem("token");
       const res = await fetch(
-        `http://localhost:8080/api/reports/report/logs?username=${encodeURIComponent(queryUser)}`,
+        `http://localhost:8080/api/reports/report/logs?username=${encodeURIComponent(queryUser)}&page=${p}&size=${PAGE_SIZE}`,
         {
           headers: {
             "Content-Type": "application/json",
@@ -103,7 +170,11 @@ const ReportLogsPage = () => {
       );
       if (!res.ok) throw new Error(`Xatolik: ${res.status} ${res.statusText}`);
       const data = await res.json();
-      setLogs(data);
+      // Spring Page response
+      setLogs(data.content ?? []);
+      setTotalPages(data.totalPages ?? 0);
+      setTotalElements(data.totalElements ?? 0);
+      setPage(data.number ?? 0);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -112,6 +183,15 @@ const ReportLogsPage = () => {
   };
 
   useEffect(() => { fetchLogs(); }, []);
+
+  const handlePageChange = (newPage) => {
+    fetchLogs(username, newPage);
+  };
+
+  const handleSearch = () => {
+    setPage(0);
+    fetchLogs(username, 0);
+  };
 
   const filtered = logs.filter((r) => {
     const matchSearch =
@@ -126,10 +206,10 @@ const ReportLogsPage = () => {
   return (
     <div style={s.wrapper}>
       <style>{`
-        @keyframes logPulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-        @keyframes logSpin  { to{transform:rotate(360deg)} }
-        @keyframes logFadeIn{ from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
-        tr.log-row:hover td { background: #f8fafc !important; }
+        @keyframes logPulse  { 0%,100%{opacity:1} 50%{opacity:0.4} }
+        @keyframes logSpin   { to{transform:rotate(360deg)} }
+        @keyframes logFadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+        tr.log-row:hover td  { background: #f8fafc !important; }
       `}</style>
 
       {/* Header */}
@@ -138,7 +218,7 @@ const ReportLogsPage = () => {
           <h1 style={s.title}>Report Logs</h1>
           <p style={s.subtitle}>Barcha report ijro tarixi va holatlari</p>
         </div>
-        <button onClick={() => fetchLogs()} style={s.refreshBtn}>
+        <button onClick={() => fetchLogs(username, page)} style={s.refreshBtn}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
             <path d="M21 3v5h-5" />
@@ -151,7 +231,6 @@ const ReportLogsPage = () => {
 
       {/* Filters */}
       <div style={s.filtersRow}>
-        {/* Search */}
         <div style={s.searchWrap}>
           <svg style={{ flexShrink: 0 }} width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
@@ -168,7 +247,6 @@ const ReportLogsPage = () => {
           )}
         </div>
 
-        {/* Username — faqat ADMIN ko'radi va o'zgartira oladi */}
         {isAdmin ? (
           <div style={s.usernameWrap}>
             <svg style={{ flexShrink: 0, color: "#94a3b8" }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -177,28 +255,22 @@ const ReportLogsPage = () => {
             <input
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && fetchLogs(username)}
+              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
               placeholder="username kiriting..."
               style={s.usernameInput}
             />
-            <button onClick={() => fetchLogs(username)} style={s.goBtn}>Qidirish</button>
+            <button onClick={handleSearch} style={s.goBtn}>Qidirish</button>
           </div>
         ) : (
-          /* USER: faqat o'z username ini ko'rsatadi, o'zgartira olmaydi */
           <div style={{ ...s.usernameWrap, background: "#f8fafc", cursor: "default" }}>
             <svg style={{ flexShrink: 0, color: "#94a3b8" }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
             </svg>
-            <span style={{ fontSize: 13, color: "#475569", fontWeight: 600, padding: "2px 4px" }}>
-              {currentUser}
-            </span>
-            <span style={{ fontSize: 11, color: "#94a3b8", marginLeft: 2, padding: "2px 8px", background: "#f1f5f9", borderRadius: 6 }}>
-              faqat o'zingiz
-            </span>
+            <span style={{ fontSize: 13, color: "#475569", fontWeight: 600, padding: "2px 4px" }}>{currentUser}</span>
+            <span style={{ fontSize: 11, color: "#94a3b8", marginLeft: 2, padding: "2px 8px", background: "#f1f5f9", borderRadius: 6 }}>faqat o'zingiz</span>
           </div>
         )}
 
-        {/* Status filter */}
         <div style={s.statusFilter}>
           {statuses.map((st) => {
             const cfg = STATUS_CONFIG[st];
@@ -260,7 +332,7 @@ const ReportLogsPage = () => {
                 ) : filtered.map((r, i) => (
                   <>
                     <tr key={r.id} className="log-row" style={{ ...s.tr, animation: `logFadeIn 0.2s ease ${i * 0.03}s both` }}>
-                      <td style={{ ...s.td, color: "#94a3b8", fontSize: 12 }}>{i + 1}</td>
+                      <td style={{ ...s.td, color: "#94a3b8", fontSize: 12 }}>{page * PAGE_SIZE + i + 1}</td>
                       <td style={{ ...s.td, fontFamily: "monospace", fontSize: 12, color: "#94a3b8" }}>{r.id}</td>
                       <td style={{ ...s.td, fontWeight: 500, color: "#0f172a" }}>{r.reportName || "—"}</td>
                       <td style={s.td}>
@@ -301,13 +373,13 @@ const ReportLogsPage = () => {
             </table>
           </div>
 
-          <div style={s.footer}>
-            <span>Jami: <strong>{filtered.length}</strong> ta log{search && ` (qidiruv: "${search}")`}</span>
-            <span style={{ color: "#cbd5e1" }}>|</span>
-            <span>Muvaffaqiyat: <strong style={{ color: "#22c55e" }}>{filtered.filter(r => r.status === "SUCCESS").length}</strong></span>
-            <span>Xatolik: <strong style={{ color: "#ef4444" }}>{filtered.filter(r => r.status === "ERROR").length}</strong></span>
-            <span>Jarayonda: <strong style={{ color: "#3b82f6" }}>{filtered.filter(r => r.status === "RUNNING").length}</strong></span>
-          </div>
+          {/* Pagination */}
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            totalElements={totalElements}
+            onPageChange={handlePageChange}
+          />
         </>
       )}
     </div>
@@ -315,36 +387,35 @@ const ReportLogsPage = () => {
 };
 
 const s = {
-  wrapper: { padding: 28, height: "100%", overflowY: "auto", boxSizing: "border-box", background: "#f8fafc", fontFamily: "'DM Sans', system-ui, sans-serif" },
-  header: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24 },
-  title: { margin: 0, fontSize: 22, fontWeight: 700, color: "#0f172a", letterSpacing: "-0.3px" },
-  subtitle: { margin: "4px 0 0", fontSize: 13, color: "#94a3b8" },
-  refreshBtn: { display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 8, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontSize: 13, fontWeight: 500, cursor: "pointer" },
-  filtersRow: { display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 16, alignItems: "center" },
-  searchWrap: { display: "flex", alignItems: "center", gap: 8, background: "#fff", border: "1.5px solid #e2e8f0", borderRadius: 10, padding: "8px 12px", flex: "1 1 220px", minWidth: 200 },
+  wrapper:     { padding: 14, height: "100%", overflowY: "auto", boxSizing: "border-box", background: "#f8fafc", fontFamily: "'DM Sans', system-ui, sans-serif" },
+  header:      { display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24 },
+  title:       { margin: 0, fontSize: 22, fontWeight: 700, color: "#0f172a", letterSpacing: "-0.3px" },
+  subtitle:    { margin: "4px 0 0", fontSize: 13, color: "#94a3b8" },
+  refreshBtn:  { display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 8, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontSize: 13, fontWeight: 500, cursor: "pointer" },
+  filtersRow:  { display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 16, alignItems: "center" },
+  searchWrap:  { display: "flex", alignItems: "center", gap: 8, background: "#fff", border: "1.5px solid #e2e8f0", borderRadius: 10, padding: "8px 12px", flex: "1 1 220px", minWidth: 200 },
   searchInput: { flex: 1, border: "none", outline: "none", fontSize: 13, color: "#0f172a", background: "transparent" },
-  clearBtn: { border: "none", background: "none", color: "#94a3b8", cursor: "pointer", fontSize: 13, padding: 0 },
-  usernameWrap: { display: "flex", alignItems: "center", gap: 6, background: "#fff", border: "1.5px solid #e2e8f0", borderRadius: 10, padding: "6px 10px 6px 12px" },
+  clearBtn:    { border: "none", background: "none", color: "#94a3b8", cursor: "pointer", fontSize: 13, padding: 0 },
+  usernameWrap:  { display: "flex", alignItems: "center", gap: 6, background: "#fff", border: "1.5px solid #e2e8f0", borderRadius: 10, padding: "6px 10px 6px 12px" },
   usernameInput: { border: "none", outline: "none", fontSize: 13, color: "#0f172a", background: "transparent", width: 130 },
-  goBtn: { padding: "5px 12px", borderRadius: 7, border: "none", background: "#2563eb", color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer" },
+  goBtn:       { padding: "5px 12px", borderRadius: 7, border: "none", background: "#2563eb", color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer" },
   statusFilter: { display: "flex", gap: 4, flexWrap: "wrap" },
-  filterBtn: { padding: "5px 12px", borderRadius: 99, fontSize: 12, cursor: "pointer", transition: "all 0.15s" },
-  center: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 200 },
-  spinner: { width: 36, height: 36, border: "3px solid #e2e8f0", borderTop: "3px solid #2563eb", borderRadius: "50%", animation: "logSpin 0.8s linear infinite" },
-  errorBox: { display: "flex", alignItems: "center", gap: 10, background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 10, padding: "14px 20px", fontSize: 14 },
-  tableWrap: { background: "#fff", borderRadius: 14, overflow: "hidden", boxShadow: "0 1px 10px rgba(0,0,0,0.06)", border: "1px solid #e2e8f0" },
-  table: { width: "100%", borderCollapse: "collapse" },
-  theadRow: { background: "#f8fafc" },
-  th: { padding: "11px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#94a3b8", letterSpacing: "0.05em", textTransform: "uppercase", borderBottom: "1px solid #e2e8f0", whiteSpace: "nowrap" },
-  tr: { borderBottom: "1px solid #f1f5f9" },
-  td: { padding: "13px 14px", fontSize: 13, color: "#334155", verticalAlign: "middle", background: "#fff", transition: "background 0.1s" },
-  emptyRow: { textAlign: "center", padding: "48px 0", color: "#94a3b8", fontSize: 13 },
-  userChip: { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 },
-  userDot: { width: 22, height: 22, borderRadius: "50%", background: "#eff6ff", color: "#2563eb", fontSize: 10, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
-  detailBtn: { border: "none", background: "#fef2f2", color: "#ef4444", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 11 },
+  filterBtn:   { padding: "5px 12px", borderRadius: 99, fontSize: 12, cursor: "pointer", transition: "all 0.15s" },
+  center:      { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 200 },
+  spinner:     { width: 36, height: 36, border: "3px solid #e2e8f0", borderTop: "3px solid #2563eb", borderRadius: "50%", animation: "logSpin 0.8s linear infinite" },
+  errorBox:    { display: "flex", alignItems: "center", gap: 10, background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 10, padding: "14px 20px", fontSize: 14 },
+  tableWrap:   { background: "#fff", borderRadius: 14, overflow: "hidden", boxShadow: "0 1px 10px rgba(0,0,0,0.06)", border: "1px solid #e2e8f0" },
+  table:       { width: "100%", borderCollapse: "collapse" },
+  theadRow:    { background: "#f8fafc" },
+  th:          { padding: "7px 10px", textAlign: "left", fontSize: 10, fontWeight: 700, color: "#94a3b8", letterSpacing: "0.05em", textTransform: "uppercase", borderBottom: "1px solid #e2e8f0", whiteSpace: "nowrap" },
+  tr:          { borderBottom: "1px solid #f1f5f9" },
+  td:          { padding: "7px 10px", fontSize: 12, color: "#334155", verticalAlign: "middle", background: "#fff", transition: "background 0.1s" },
+  emptyRow:    { textAlign: "center", padding: "48px 0", color: "#94a3b8", fontSize: 13 },
+  userChip:    { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 },
+  userDot:     { width: 18, height: 18, borderRadius: "50%", background: "#eff6ff", color: "#2563eb", fontSize: 9, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
+  detailBtn:   { border: "none", background: "#fef2f2", color: "#ef4444", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 11 },
   errorDetail: { padding: "12px 16px", borderTop: "1px solid #fecaca" },
-  errorPre: { margin: "6px 0 0", fontSize: 12, color: "#dc2626", whiteSpace: "pre-wrap", wordBreak: "break-all", background: "#fff", border: "1px solid #fecaca", borderRadius: 6, padding: 10 },
-  footer: { marginTop: 12, fontSize: 13, color: "#94a3b8", display: "flex", gap: 12, alignItems: "center", justifyContent: "flex-end" },
+  errorPre:    { margin: "6px 0 0", fontSize: 12, color: "#dc2626", whiteSpace: "pre-wrap", wordBreak: "break-all", background: "#fff", border: "1px solid #fecaca", borderRadius: 6, padding: 10 },
 };
 
 export default ReportLogsPage;
