@@ -5,5 +5,6 @@ import java.util.UUID;
 
 public record ExecuteReportRequestDto(String username,
                                       UUID repId,
-                                      Map<String, String> params) {
+                                      Map<String, String> params,
+                                      String fileFormat) {
 }

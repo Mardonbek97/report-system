@@ -75,7 +75,7 @@ create table REP_CORE_PARAMS
 (
   rep_id      RAW(16),
   param_name  VARCHAR2(100),
-  param_type  VARCHAR2(100),
+  param_type  VARCHAR2(100),  /*if file then you can upload .xlsx or .xls */
   param_order NUMBER,
   param_view  NVARCHAR2(200),
   def_value   VARCHAR2(4000)  /*SELECT TO_CHAR(SYSDATE, 'DD.MM.YYYY') FROM DUAL like this */
@@ -85,4 +85,11 @@ alter table REP_CORE_PARAMS
   add constraint FK_REP_PARAMS foreign key (REP_ID)
   references REP_CORE_NAME (ID);
 
+-- Create table
+create table REP_CORE_EXCEL_TMP
+(
+  rep_id      RAW(20),
+  row_number  NUMBER,
+  import_data CLOB
+);
 

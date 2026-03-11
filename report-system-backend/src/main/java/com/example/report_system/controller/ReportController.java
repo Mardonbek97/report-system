@@ -80,27 +80,17 @@ public class ReportController {
     @PostMapping("/generate")
     public ResponseEntity<String> generateReport(@RequestBody ExecuteReportRequestDto request) throws Exception {
 
-        byte[] zipBytes = reportExecZipService.executeAndExportZip(request);
+        ReportExecZipService.ExportResult result = reportExecZipService.executeAndExportZip(request);
 
-        String fileName = "report_" + System.currentTimeMillis() + ".zip";
+        String ext      = result.extension();
+        String fileName = "report_" + System.currentTimeMillis() + "." + ext;
         String filePath = allowedExportDir + fileName;
-        Files.write(Paths.get(filePath), zipBytes);
+
+        Files.write(Paths.get(filePath), result.bytes());
 
         return ResponseEntity.ok("Fayl saqlandi: " + filePath);
     }
 
-
-    @GetMapping("/report/logs")
-    public List<ReportExecLogDto> getReportLogs(
-            @RequestParam String username) {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-
-        Collection<? extends GrantedAuthority> authorities = auth.getAuthorities();
-        boolean isAdmin = authorities.stream()
-                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
-
-        return reportService.fetchTempData(username, isAdmin);
-    }
 
     @GetMapping("/download")
     public ResponseEntity<Resource> downloadFile(@RequestParam String path,
@@ -114,9 +104,12 @@ public class ReportController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
 
-        // 2. Faqat .xlsx va .zip fayllar
+        // 2. Ruxsat etilgan formatlar
         String filePathStr = filePath.toString().toLowerCase();
-        if (!filePathStr.endsWith(".xlsx") && !filePathStr.endsWith(".zip")) {
+        if (!filePathStr.endsWith(".xlsx")
+                && !filePathStr.endsWith(".zip")
+                && !filePathStr.endsWith(".docx")
+                && !filePathStr.endsWith(".txt")) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
 
@@ -126,15 +119,29 @@ public class ReportController {
             return ResponseEntity.notFound().build();
         }
 
-        // 4. Content type — xlsx yoki zip
-        MediaType contentType = filePathStr.endsWith(".zip")
-                ? MediaType.parseMediaType("application/zip")
-                : MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        // 4. Content type
+        MediaType contentType;
+        if      (filePathStr.endsWith(".zip"))  contentType = MediaType.parseMediaType("application/zip");
+        else if (filePathStr.endsWith(".docx")) contentType = MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+        else if (filePathStr.endsWith(".txt"))  contentType = MediaType.TEXT_PLAIN;
+        else                                    contentType = MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         "attachment; filename=\"" + filePath.getFileName().toString() + "\"")
                 .contentType(contentType)
                 .body(resource);
+    }
+
+    @GetMapping("/report/logs")
+    public List<ReportExecLogDto> getReportLogs(
+            @RequestParam String username) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+
+        Collection<? extends GrantedAuthority> authorities = auth.getAuthorities();
+        boolean isAdmin = authorities.stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+
+        return reportService.fetchTempData(username, isAdmin);
     }
 }

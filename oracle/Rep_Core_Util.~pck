@@ -18,10 +18,6 @@ create or replace package Rep_Core_Util is
   Procedure Report_Log_Error(p_repid  raw,
                              i_rep_id number,
                              i_Errmsg varchar2 default null);
-  Procedure Import_Excel(p_rep_id    RAW,
-                         p_upload_id RAW,
-                         p_user      varchar2,
-                         o_Errmsg    out varchar2);
 
 end Rep_Core_Util;
 /
@@ -50,8 +46,6 @@ CREATE OR REPLACE Package Body Rep_Core_Util is
     --5 Error Generating
   
     Commit;
-    
-    Exception when others then raise;
   
   End Report_Log_Beg;
   /**************************************Ending Delete_Access********************************************************/
@@ -61,7 +55,9 @@ CREATE OR REPLACE Package Body Rep_Core_Util is
   
   Begin
     update rep_core_log t
-       set t.status = '2', t.percentage = '100', t.end_time = sysdate
+       set t.status = '2', 
+           t.percentage = '100', 
+           t.end_time = sysdate
      where t.id = i_rep_id
        and t.rep_id = p_repid;
   
@@ -167,43 +163,43 @@ CREATE OR REPLACE Package Body Rep_Core_Util is
   ------------========================================================================================================----- 
   /*********************************************Beginnig  Get_Params*************************************************/
   Function Get_Params(p_rep_id raw) return pljson is
-    v_param pljson := pljson();
+    v_param        pljson := pljson();
   Begin
     for rec in (Select t.param_name, t.param_type
                   from rep_core_params t
                  where t.rep_id = p_rep_id) Loop
-    
-      v_param.put(rec.param_name, rec.param_type);
-    
+      
+      v_param.put(rec.param_name , rec.param_type); 
+      
     End Loop;
-  
+    
     return v_param;
   Exception
-    when others then
+    when others then 
       v_param.put('param_name', sqlerrm);
       return v_param;
       null;
     
   End Get_Params;
-  /***************************************************Ending Get_Params**************************************/
-  ------------========================================================================================================----- 
+  /***************************************************Ending Get_Params**************************************/ 
+ ------------========================================================================================================----- 
   /*********************************************Beginnig  Execute_Proc*******************************************/
   Procedure Execute_Proc(p_rep_id varchar2,
                          p_user   varchar2,
                          p_params clob,
                          o_Errmsg out varchar2) is
-    v_rep_name             varchar2(50);
-    v_package_name         varchar2(200);
-    v_sql                  VARCHAR2(32767);
-    v_json                 pljson := pljson();
-    v_keys                 pljson_list := pljson_list();
-    v_param_list           VARCHAR2(32767) := '';
-    v_param_name           VARCHAR2(100);
-    v_param_value          VARCHAR2(4000);
-    v_rep_id               number;
-    user_access_right      EXCEPTION;
-    i_rep_id               raw(16);
-    v_param_data_type      pljson := pljson();
+    v_rep_name        varchar2(50);
+    v_package_name    varchar2(200);
+    v_sql             VARCHAR2(32767);
+    v_json            pljson := pljson();
+    v_keys            pljson_list := pljson_list();
+    v_param_list      VARCHAR2(32767) := '';
+    v_param_name      VARCHAR2(100);
+    v_param_value     VARCHAR2(4000);
+    v_rep_id          number;
+    user_access_right EXCEPTION;
+    i_rep_id          raw(16);
+    v_param_data_type pljson := pljson();
     v_param_data_type_name varchar2(100);
   Begin
   
@@ -214,10 +210,6 @@ CREATE OR REPLACE Package Body Rep_Core_Util is
       from rep_core_name t
      where t.id = i_rep_id
        and t.status = '1'; --1=>Active 2=>Deleted
-       
-    rep_core_util.Report_Log_Beg(p_repid  => i_rep_id,
-                                 p_user   => p_user,
-                                 o_rep_id => v_rep_id);   
   
     v_json := pljson(p_params);
   
@@ -226,20 +218,16 @@ CREATE OR REPLACE Package Body Rep_Core_Util is
   
     v_param_data_type := get_params(p_rep_id);
     --dbms_output.put_line(v_param_data_type.to_char);
-  
+   
     for i in 1 .. v_keys.count loop
       v_param_name := replace(v_keys.get(i).to_char, '"', '');
-    
-      v_param_data_type_name := replace(v_param_data_type.get(v_param_name).to_char,
-                                        '"',
-                                        '');
-    
+      
+      v_param_data_type_name := replace(v_param_data_type.get(v_param_name).to_char, '"', '');
+      
       if lower(v_param_data_type_name) = 'date' then
-        v_param_value := to_char(to_date(v_json.get_string(v_param_name),
-                                         'dd.mm.yyyy'),
-                                 'yyyymmdd');
+        v_param_value := to_char(to_date(v_json.get_string(v_param_name), 'dd.mm.yyyy'), 'yyyymmdd');
         dbms_output.put_line(v_param_value);
-        v_param_list := v_param_list || '''' || v_param_value || '''';
+        v_param_list  := v_param_list || '''' || v_param_value || '''';
       elsif v_json.get(v_param_name).is_string then
         v_param_value := v_json.get_string(v_param_name);
         v_param_list  := v_param_list || '''' || v_param_value || '''';
@@ -253,19 +241,22 @@ CREATE OR REPLACE Package Body Rep_Core_Util is
       IF i < v_keys.COUNT THEN
         v_param_list := v_param_list || ', ';
       END IF;
-    
+      
     END LOOP;
   
     v_sql := v_sql || v_param_list || '); END;';
   
     Info_Session(p_name => v_rep_name);
-    
+    rep_core_util.Report_Log_Beg(p_repid  => i_rep_id,
+                                 p_user   => p_user,
+                                 o_rep_id => v_rep_id);
     Rep_Prepare;
     if not Access_Right(i_rep_id, p_user) then
       raise user_access_right;
     end if;
   
     Execute immediate v_sql;
+    dbms_output.put_line(v_sql);
     rep_core_util.Report_Log_End(p_repid => i_rep_id, i_rep_id => v_rep_id);
   
   Exception
@@ -282,57 +273,6 @@ CREATE OR REPLACE Package Body Rep_Core_Util is
     
   End Execute_Proc;
   /***************************************************Ending Execute_Proc**************************************/
-  ------------========================================================================================================----- 
-  Procedure Import_Excel(p_rep_id    RAW,
-                         p_upload_id RAW,
-                         p_user      varchar2,
-                         o_Errmsg    out varchar2) is
-    v_rep_name        varchar2(50);
-    v_package_name    varchar2(200);
-    v_sql             VARCHAR2(32767);
-    v_rep_id          number; 
-    user_access_right EXCEPTION;
-  Begin
-  
-    Select replace(substr(t.name, 1, 30), ' ', '_'), t.package_name
-      into v_rep_name, v_package_name
-      from rep_core_name t
-     where t.id = p_rep_id
-       and t.status = '1'; --1=>Active 2=>Deleted
-  
-     rep_core_util.Report_Log_Beg(p_repid  => p_rep_id,
-                                 p_user   => p_user,
-                                 o_rep_id => v_rep_id);
-                                 
-    v_sql := 'BEGIN ' || v_package_name ;
-  
-    v_sql := v_sql ||  '(HEXTORAW(''' || RAWTOHEX(p_upload_id) || ''')); END;';
-    
-    dbms_output.put_line(v_sql);
-     
-    Info_Session(p_name => v_rep_name);
-   
-    Rep_Prepare;
-    if not Access_Right(p_rep_id, p_user) then
-      raise user_access_right;
-    end if;
-  
-    Execute immediate v_sql;
-    rep_core_util.Report_Log_End(p_repid => p_rep_id, i_rep_id => v_rep_id);
-  
-  Exception
-    when user_access_right then
-      o_Errmsg := 'You do not have access the report';
-      rep_core_util.Report_Log_Error(p_repid  => p_rep_id,
-                                     i_rep_id => v_rep_id,
-                                     i_Errmsg => o_Errmsg);
-    when others then
-      o_Errmsg := dbms_utility.format_error_backtrace;
-      rep_core_util.Report_Log_Error(p_repid  => p_rep_id,
-                                     i_rep_id => v_rep_id,
-                                     i_Errmsg => o_Errmsg || ' ' || v_sql);
-    
-  End Import_Excel;
 
 End Rep_Core_Util;
 /
