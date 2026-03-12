@@ -1,13 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-
-const authHeaders = () => {
-  const token = localStorage.getItem("token");
-  return {
-    "Content-Type": "application/json",
-    "Accept-Language": "UZ",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-};
+import { api } from "../api";
 
 const resolveInputType = (paramType) => {
   if (!paramType) return "text";
@@ -36,7 +28,6 @@ const FormatIcon = ({ fmt }) => {
   return icons[fmt] || null;
 };
 
-// ── Format Dropdown ──
 const FormatDropdown = ({ selected, onChange }) => {
   const [open, setOpen] = useState(false);
   const fmts = ["xlsx", "docx", "txt"];
@@ -67,7 +58,6 @@ const FormatDropdown = ({ selected, onChange }) => {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
         </svg>
       </button>
-
       {open && (
         <div style={{
           position: "absolute", bottom: "calc(100% + 5px)", left: 0,
@@ -96,7 +86,6 @@ const FormatDropdown = ({ selected, onChange }) => {
   );
 };
 
-// ── File Upload Input ──
 const FileUploadInput = ({ param, value, onChange, hasError, repId }) => {
   const inputRef = useRef(null);
   const [dragOver, setDragOver] = useState(false);
@@ -106,18 +95,12 @@ const FileUploadInput = ({ param, value, onChange, hasError, repId }) => {
   const uploadFile = async (file) => {
     setUploading(true); setUploadError("");
     try {
-      const token = localStorage.getItem("token");
       const formData = new FormData();
       formData.append("file", file);
       formData.append("repId", repId);
       formData.append("username", localStorage.getItem("username") || "");
 
-      const res = await fetch("http://localhost:8080/api/reports/upload", {
-        method: "POST",
-        headers: { "Accept-Language": "UZ", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: formData,
-      });
-
+      const res = await api.upload("/api/reports/upload", formData);
       if (!res.ok) throw new Error(await res.text() || "Fayl yuklashda xatolik");
 
       const contentType = res.headers.get("content-type") || "";
@@ -143,15 +126,9 @@ const FileUploadInput = ({ param, value, onChange, hasError, repId }) => {
 
   if (value && value.name) {
     return (
-      <div style={{
-        border: `1.5px solid ${hasError ? "#fca5a5" : "#a3e635"}`, borderRadius: 8,
-        background: hasError ? "#fff8f8" : "#f7fee7", padding: "8px 12px",
-        display: "flex", alignItems: "center", gap: 8,
-      }}>
+      <div style={{ border: `1.5px solid ${hasError ? "#fca5a5" : "#a3e635"}`, borderRadius: 8, background: hasError ? "#fff8f8" : "#f7fee7", padding: "8px 12px", display: "flex", alignItems: "center", gap: 8 }}>
         <div style={{ width: 30, height: 30, borderRadius: 7, background: "#d9f99d", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: "#4d7c0f" }}>
-          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
+          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: "#1a2e05", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value.name}</div>
@@ -162,9 +139,7 @@ const FileUploadInput = ({ param, value, onChange, hasError, repId }) => {
         </div>
         <button onClick={() => { onChange(null); setUploadError(""); if (inputRef.current) inputRef.current.value = ""; }}
           style={{ width: 24, height: 24, borderRadius: 6, border: "1.5px solid #bbf7d0", background: "#fff", color: "#dc2626", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <svg width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-          </svg>
+          <svg width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
         </button>
       </div>
     );
@@ -176,84 +151,50 @@ const FileUploadInput = ({ param, value, onChange, hasError, repId }) => {
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
         onDrop={(e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files?.[0]; if (f) uploadFile(f); }}
-        style={{
-          border: `2px dashed ${hasError ? "#fca5a5" : dragOver ? "#2563eb" : "#cbd5e1"}`,
-          borderRadius: 8, background: hasError ? "#fff8f8" : dragOver ? "#eff6ff" : "#fafafa",
-          padding: "14px 10px", display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
-          cursor: uploading ? "wait" : "pointer", transition: "all 0.15s",
-        }}>
+        style={{ border: `2px dashed ${hasError ? "#fca5a5" : dragOver ? "#2563eb" : "#cbd5e1"}`, borderRadius: 8, background: hasError ? "#fff8f8" : dragOver ? "#eff6ff" : "#fafafa", padding: "14px 10px", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, cursor: uploading ? "wait" : "pointer", transition: "all 0.15s" }}>
         {uploading ? (
-          <>
-            <div style={{ width: 26, height: 26, border: "3px solid #e2e8f0", borderTop: "3px solid #2563eb", borderRadius: "50%", animation: "execSpin 0.8s linear infinite" }} />
-            <span style={{ fontSize: 12, color: "#64748b", fontWeight: 600 }}>Yuklanmoqda...</span>
-          </>
+          <><div style={{ width: 26, height: 26, border: "3px solid #e2e8f0", borderTop: "3px solid #2563eb", borderRadius: "50%", animation: "execSpin 0.8s linear infinite" }} /><span style={{ fontSize: 12, color: "#64748b", fontWeight: 600 }}>Yuklanmoqda...</span></>
         ) : (
           <>
             <div style={{ width: 34, height: 34, borderRadius: 8, background: dragOver ? "#dbeafe" : "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center", color: dragOver ? "#2563eb" : "#94a3b8" }}>
-              <svg width="17" height="17" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-              </svg>
+              <svg width="17" height="17" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
             </div>
             <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: dragOver ? "#2563eb" : "#334155" }}>
-                Faylni tashlang yoki <span style={{ color: "#2563eb", textDecoration: "underline" }}>tanlang</span>
-              </div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: dragOver ? "#2563eb" : "#334155" }}>Faylni tashlang yoki <span style={{ color: "#2563eb", textDecoration: "underline" }}>tanlang</span></div>
               <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 2 }}>Har qanday fayl formati</div>
             </div>
           </>
         )}
       </div>
-      {uploadError && (
-        <div style={{ marginTop: 5, padding: "5px 8px", background: "#fef2f2", color: "#dc2626", borderRadius: 6, fontSize: 11, border: "1px solid #fecaca" }}>
-          ⚠ {uploadError}
-        </div>
-      )}
+      {uploadError && <div style={{ marginTop: 5, padding: "5px 8px", background: "#fef2f2", color: "#dc2626", borderRadius: 6, fontSize: 11, border: "1px solid #fecaca" }}>⚠ {uploadError}</div>}
       <input ref={inputRef} type="file" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFile(f); }} style={{ display: "none" }} tabIndex={-1} />
     </div>
   );
 };
 
-// ── Param Input ──
 const ParamInput = ({ param, value, onChange, hasError, repId }) => {
   const type = resolveInputType(param.paramType);
   const label = param.paramView || param.paramName;
   const hasOptions = Array.isArray(param.options) && param.options.length > 0;
-
-  const base = {
-    width: "100%", boxSizing: "border-box",
-    border: `1.5px solid ${hasError ? "#fca5a5" : "#e2e8f0"}`,
-    borderRadius: 8, padding: "7px 10px", fontSize: 13,
-    color: "#0f172a", background: hasError ? "#fff8f8" : "#fafafa",
-    outline: "none", fontFamily: "inherit", transition: "border-color 0.15s",
-  };
+  const base = { width: "100%", boxSizing: "border-box", border: `1.5px solid ${hasError ? "#fca5a5" : "#e2e8f0"}`, borderRadius: 8, padding: "7px 10px", fontSize: 13, color: "#0f172a", background: hasError ? "#fff8f8" : "#fafafa", outline: "none", fontFamily: "inherit", transition: "border-color 0.15s" };
 
   if (type === "upload") return <FileUploadInput param={param} value={value} onChange={onChange} hasError={hasError} repId={repId} />;
-
   if (hasOptions) return (
     <select value={value || ""} onChange={(e) => onChange(e.target.value)} style={{ ...base, cursor: "pointer" }}>
       <option value="">— Tanlang —</option>
       {param.options.map((opt) => <option key={String(opt.id)} value={String(opt.id)}>{opt.name}</option>)}
     </select>
   );
-
   if (type === "boolean") return (
     <div style={{ display: "flex", gap: 8 }}>
       {[{ val: "true", label: "✓  Ha" }, { val: "false", label: "✕  Yo'q" }].map((opt) => (
-        <label key={opt.val} style={{
-          flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
-          cursor: "pointer", padding: "8px 0", borderRadius: 8,
-          border: `1.5px solid ${value === opt.val ? "#2563eb" : (hasError ? "#fca5a5" : "#e2e8f0")}`,
-          background: value === opt.val ? "#eff6ff" : (hasError ? "#fff8f8" : "#fafafa"),
-          color: value === opt.val ? "#2563eb" : "#64748b",
-          fontWeight: 700, fontSize: 13, transition: "all 0.15s",
-        }}>
+        <label key={opt.val} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: "8px 0", borderRadius: 8, border: `1.5px solid ${value === opt.val ? "#2563eb" : (hasError ? "#fca5a5" : "#e2e8f0")}`, background: value === opt.val ? "#eff6ff" : (hasError ? "#fff8f8" : "#fafafa"), color: value === opt.val ? "#2563eb" : "#64748b", fontWeight: 700, fontSize: 13, transition: "all 0.15s" }}>
           <input type="radio" name={param.paramName} value={opt.val} checked={value === opt.val} onChange={() => onChange(opt.val)} style={{ display: "none" }} />
           {opt.label}
         </label>
       ))}
     </div>
   );
-
   if (type === "date") {
     const toISO = (v) => { if (!v) return ""; if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v; const p = v.split("."); if (p.length === 3) return `${p[2]}-${p[1]}-${p[0]}`; return ""; };
     const fromISO = (v) => { if (!v) return ""; const [y, m, d] = v.split("-"); return `${d}.${m}.${y}`; };
@@ -267,27 +208,20 @@ const ParamInput = ({ param, value, onChange, hasError, repId }) => {
     return (
       <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
         <input type="text" value={value || ""} onChange={handleTextInput} placeholder="DD.MM.YYYY" maxLength={10} style={{ ...base, paddingRight: 36 }} />
-        <span style={{ position: "absolute", right: 8, cursor: "pointer", display: "flex", alignItems: "center", color: "#94a3b8" }}
-          onClick={() => document.getElementById("hidden-date-" + param.paramName)?.showPicker?.()}>
-          <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-          </svg>
+        <span style={{ position: "absolute", right: 8, cursor: "pointer", display: "flex", alignItems: "center", color: "#94a3b8" }} onClick={() => document.getElementById("hidden-date-" + param.paramName)?.showPicker?.()}>
+          <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
         </span>
-        <input id={"hidden-date-" + param.paramName} type="date" value={toISO(value)} onChange={(e) => onChange(fromISO(e.target.value))}
-          style={{ position: "absolute", opacity: 0, width: 0, height: 0, pointerEvents: "none" }} tabIndex={-1} />
+        <input id={"hidden-date-" + param.paramName} type="date" value={toISO(value)} onChange={(e) => onChange(fromISO(e.target.value))} style={{ position: "absolute", opacity: 0, width: 0, height: 0, pointerEvents: "none" }} tabIndex={-1} />
       </div>
     );
   }
-
   if (type === "datetime") return <input type="datetime-local" value={value || ""} onChange={(e) => onChange(e.target.value)} style={base} />;
   if (type === "number") return <input type="number" value={value || ""} onChange={(e) => onChange(e.target.value)} placeholder={`${label} kiriting...`} style={base} />;
   return <input type="text" value={value || ""} onChange={(e) => onChange(e.target.value)} placeholder={`${label} kiriting...`} style={base} />;
 };
 
-// ════════════════════════════════════════════════════════
 const ReportExecutePage = () => {
   const repId = new URLSearchParams(window.location.search).get("repId");
-
   const [reportName, setReportName] = useState("Report");
   const [params, setParams] = useState([]);
   const [paramValues, setParamValues] = useState({});
@@ -311,7 +245,7 @@ const ReportExecutePage = () => {
     const fetchParams = async () => {
       setParamsLoading(true); setParamsError("");
       try {
-        const res = await fetch(`http://localhost:8080/api/reports/report?repId=${repId}`, { headers: authHeaders() });
+        const res = await api.get(`/api/reports/report?repId=${repId}`);
         if (!res.ok) throw new Error("Parametrlarni yuklashda xatolik");
         const data = await res.json();
         setParams(data);
@@ -355,9 +289,8 @@ const ReportExecutePage = () => {
           stringParams[p.paramName] = String(paramValues[p.paramName]);
         }
       });
-      const res = await fetch("http://localhost:8080/api/reports/generate", {
-        method: "POST", headers: authHeaders(),
-        body: JSON.stringify({ username: localStorage.getItem("username") || "", repId, params: stringParams, fileFormat: selectedFormat }),
+      const res = await api.post("/api/reports/generate", {
+        username: localStorage.getItem("username") || "", repId, params: stringParams, fileFormat: selectedFormat,
       });
       const text = await res.text();
       if (!res.ok) throw new Error(text || "Xatolik yuz berdi");
@@ -369,9 +302,7 @@ const ReportExecutePage = () => {
   const handleDownload = async (filePath) => {
     setDownloadLoading(true); setDownloadError("");
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`http://localhost:8080/api/reports/download?path=${encodeURIComponent(filePath)}`,
-        { headers: { Authorization: `Bearer ${token}`, "Accept-Language": "UZ" } });
+      const res = await api.download(`/api/reports/download?path=${encodeURIComponent(filePath)}`);
       if (!res.ok) throw new Error("Yuklab olishda xatolik: " + res.status);
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
@@ -387,13 +318,10 @@ const ReportExecutePage = () => {
 
   return (
     <div style={s.page}>
-      {/* Top bar */}
       <div style={s.topBar}>
         <div style={s.topLeft}>
           <div style={s.topIcon}>
-            <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="#2563eb">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
+            <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="#2563eb"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
           </div>
           <div>
             <div style={s.topName}>{reportName}</div>
@@ -401,21 +329,16 @@ const ReportExecutePage = () => {
           </div>
         </div>
         <button style={s.closeBtn} onClick={() => window.close()}>
-          <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-          </svg>
+          <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
           Yopish
         </button>
       </div>
 
       <div style={s.body}>
-        {/* Params Card */}
         <div style={s.card}>
           <div style={s.cardHead}>
             <div style={s.cardHeadIcon}>
-              <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="#7c3aed">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-              </svg>
+              <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="#7c3aed"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
             </div>
             <span style={s.cardTitle}>Parametrlar</span>
             {!paramsLoading && !paramsError && <span style={s.badge}>{params.length} ta</span>}
@@ -456,9 +379,7 @@ const ReportExecutePage = () => {
               <FormatDropdown selected={selectedFormat} onChange={(fmt) => { setSelectedFormat(fmt); setResult(null); setDownloadError(""); }} />
               <div style={{ flex: 1 }} />
               <button style={s.resetBtn} onClick={handleReset} disabled={execLoading}>
-                <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
+                <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                 Tozalash
               </button>
               <button style={{ ...s.execBtn, opacity: execLoading ? 0.7 : 1, background: `linear-gradient(135deg, ${fmtColor.active}, ${fmtColor.active}cc)`, boxShadow: `0 3px 10px ${fmtColor.active}44` }} onClick={handleExecute} disabled={execLoading}>
@@ -470,14 +391,11 @@ const ReportExecutePage = () => {
           )}
         </div>
 
-        {/* Result Card */}
         {result !== null && (
           <div style={s.card}>
             <div style={s.cardHead}>
               <div style={{ ...s.cardHeadIcon, background: "#f0fdf4" }}>
-                <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="#16a34a">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
+                <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="#16a34a"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
               </div>
               <span style={s.cardTitle}>Natija</span>
               <span style={{ ...s.badge, background: "#dcfce7", color: "#16a34a" }}>Muvaffaqiyatli</span>
@@ -502,9 +420,7 @@ const ReportExecutePage = () => {
                       if (btn) { btn.textContent = "✓ Nusxalandi!"; setTimeout(() => { btn.textContent = "Yo'lni nusxalash"; }, 2000); }
                     });
                   }}>
-                    <svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
+                    <svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
                     Yo'lni nusxalash
                   </button>
                 </div>

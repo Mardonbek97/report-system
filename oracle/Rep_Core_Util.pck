@@ -304,9 +304,16 @@ CREATE OR REPLACE Package Body Rep_Core_Util is
                                  p_user   => p_user,
                                  o_rep_id => v_rep_id);
                                  
-    v_sql := 'BEGIN ' || v_package_name ;
-  
-    v_sql := v_sql ||  '(HEXTORAW(''' || RAWTOHEX(p_upload_id) || ''')); END;';
+    Update REP_CORE_EXCEL_TMP t 
+     set t.rep_log_id   = v_rep_id
+        where t.ID      = p_upload_id 
+          and t.REP_ID  = p_rep_id;
+    Commit;
+           
+    v_sql := 'BEGIN ' || v_package_name;
+
+    v_sql := v_sql || '(HEXTORAW(''' || RAWTOHEX(p_rep_id)  || '''), '
+                   || 'HEXTORAW(''' || RAWTOHEX(p_upload_id) || ''')); END;';
     
     dbms_output.put_line(v_sql);
      

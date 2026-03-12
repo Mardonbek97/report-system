@@ -60,6 +60,7 @@ public class SecurityConfig {
                         ).permitAll()
                         .requestMatchers("/admin/**").hasRole("ADMIN")
                         .requestMatchers("/reports/**").hasAnyRole("ADMIN", "USER")
+                        .requestMatchers("/schedule/**").hasAnyRole("ADMIN", "USER")
                         .anyRequest().authenticated()
                 )
                /* .exceptionHandling(ex -> ex

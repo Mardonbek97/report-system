@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { api } from "../api";
 
 const ReportPages = () => {
   const [reports, setReports] = useState([]);
@@ -20,10 +21,7 @@ const ReportPages = () => {
     const fetchReports = async () => {
       setLoading(true); setError("");
       try {
-        const token = localStorage.getItem("token");
-        const res = await fetch("http://localhost:8080/api/reports", {
-          headers: { "Content-Type": "application/json", "Accept-Language": "UZ", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        });
+        const res = await api.get("/api/reports");
         if (!res.ok) throw new Error("Ma'lumotlarni yuklashda xatolik");
         setReports(await res.json());
       } catch (err) { setError(err.message); }
@@ -38,10 +36,7 @@ const ReportPages = () => {
     setSelectedReport(report); setSelectedIds(new Set()); setUserSearch("");
     setSaveError(""); setSaveSuccess(""); setUsersLoading(true); setUsersError("");
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch("http://localhost:8080/api/admin/userslist", {
-        headers: { "Content-Type": "application/json", "Accept-Language": "UZ", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      });
+      const res = await api.get("/api/admin/userslist");
       if (!res.ok) throw new Error("Foydalanuvchilarni yuklashda xatolik");
       setUsers(await res.json());
     } catch (err) { setUsersError(err.message); }
@@ -78,12 +73,7 @@ const ReportPages = () => {
     if (selectedIds.size === 0) { setSaveError("Kamida 1 ta foydalanuvchi tanlang"); return; }
     setSaveLoading(true); setSaveError(""); setSaveSuccess("");
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch("http://localhost:8080/api/access/addReport", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Accept-Language": "UZ", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ userIds: Array.from(selectedIds), repId: selectedReport.id }),
-      });
+      const res = await api.post("/api/access/addReport", { userIds: Array.from(selectedIds), repId: selectedReport.id });
       const text = await res.text();
       if (!res.ok) throw new Error(text || "Xatolik yuz berdi");
       setSaveSuccess(text || "Muvaffaqiyatli saqlandi!");
@@ -92,12 +82,8 @@ const ReportPages = () => {
     finally { setSaveLoading(false); }
   };
 
-  if (loading) return (
-    <div style={s.center}><div style={s.spinner} /><p style={{ color: "#94a3b8", marginTop: 12, fontSize: 13 }}>Yuklanmoqda...</p></div>
-  );
-  if (error) return (
-    <div style={s.center}><div style={s.errorBox}>⚠ {error}</div></div>
-  );
+  if (loading) return <div style={s.center}><div style={s.spinner} /><p style={{ color: "#94a3b8", marginTop: 12, fontSize: 13 }}>Yuklanmoqda...</p></div>;
+  if (error) return <div style={s.center}><div style={s.errorBox}>⚠ {error}</div></div>;
 
   return (
     <div style={s.wrapper}>
@@ -186,9 +172,7 @@ const ReportPages = () => {
               </button>
             </div>
 
-            {selectedIds.size > 0 && (
-              <div style={s.selectedBadge}>✓ {selectedIds.size} ta tanlangan</div>
-            )}
+            {selectedIds.size > 0 && <div style={s.selectedBadge}>✓ {selectedIds.size} ta tanlangan</div>}
 
             <div style={s.userList}>
               {usersLoading ? (
@@ -225,9 +209,7 @@ const ReportPages = () => {
               <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
                 <button style={s.cancelBtn} onClick={closeReportModal} disabled={saveLoading}>Bekor qilish</button>
                 <button style={{ ...s.saveBtn, opacity: saveLoading || selectedIds.size === 0 ? 0.6 : 1 }} onClick={handleSave} disabled={saveLoading || selectedIds.size === 0}>
-                  {saveLoading
-                    ? <><span style={s.btnSpinner} /> Saqlanmoqda...</>
-                    : <>✓ Saqlash {selectedIds.size > 0 && `(${selectedIds.size})`}</>}
+                  {saveLoading ? <><span style={s.btnSpinner} /> Saqlanmoqda...</> : <>✓ Saqlash {selectedIds.size > 0 && `(${selectedIds.size})`}</>}
                 </button>
               </div>
             </div>
@@ -243,15 +225,12 @@ const s = {
   center:     { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%" },
   spinner:    { width: 30, height: 30, border: "3px solid #e2e8f0", borderTop: "3px solid #2563eb", borderRadius: "50%", animation: "spin 0.8s linear infinite" },
   errorBox:   { background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 10, padding: "12px 20px", fontSize: 13 },
-
   pageHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
   pageTitle:  { margin: 0, fontSize: 16, fontWeight: 700, color: "#0f172a" },
   pageSubtitle: { margin: "2px 0 0", fontSize: 12, color: "#94a3b8" },
-
   searchBar:   { display: "flex", alignItems: "center", gap: 8, background: "#fff", border: "1.5px solid #e2e8f0", borderRadius: 9, padding: "6px 10px", marginBottom: 10, boxShadow: "0 1px 4px rgba(0,0,0,0.04)" },
   searchInput: { flex: 1, border: "none", outline: "none", fontSize: 13, color: "#0f172a", background: "transparent" },
   clearBtn:    { border: "none", background: "none", color: "#94a3b8", cursor: "pointer", fontSize: 13, padding: 0 },
-
   tableWrap: { background: "#fff", borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 6px rgba(0,0,0,0.06)", border: "1px solid #e2e8f0" },
   table:     { width: "100%", borderCollapse: "collapse" },
   theadRow:  { background: "#f8fafc" },
@@ -264,7 +243,6 @@ const s = {
   assignBtn:   { display: "inline-flex", alignItems: "center", gap: 4, border: "1.5px solid #bfdbfe", background: "#eff6ff", color: "#2563eb", borderRadius: 7, padding: "3px 8px", fontSize: 11, fontWeight: 600, cursor: "pointer" },
   emptyRow:    { textAlign: "center", padding: 32, color: "#94a3b8", fontSize: 13 },
   tableFooter: { marginTop: 8, fontSize: 12, color: "#94a3b8", textAlign: "right" },
-
   overlay:  { position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 },
   modal:    { background: "#fff", borderRadius: 18, width: 480, maxWidth: "94vw", maxHeight: "86vh", boxShadow: "0 24px 60px rgba(0,0,0,0.2)", display: "flex", flexDirection: "column", overflow: "hidden" },
   modalHeader:   { display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", borderBottom: "1px solid #f1f5f9", flexShrink: 0 },
@@ -272,15 +250,12 @@ const s = {
   modalTitle:    { fontSize: 15, fontWeight: 700, color: "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
   modalSub:      { fontSize: 11, color: "#94a3b8", marginTop: 1 },
   modalClose:    { border: "none", background: "#f1f5f9", borderRadius: 7, width: 28, height: 28, cursor: "pointer", fontSize: 13, color: "#64748b", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
-
   modalToolbar:   { display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderBottom: "1px solid #f1f5f9", flexShrink: 0 },
   userSearchWrap: { display: "flex", alignItems: "center", gap: 7, flex: 1, background: "#f8fafc", border: "1.5px solid #e2e8f0", borderRadius: 7, padding: "6px 10px" },
   userSearchInput: { flex: 1, border: "none", outline: "none", fontSize: 13, color: "#0f172a", background: "transparent" },
-
   selectAllBtn:   { display: "inline-flex", alignItems: "center", gap: 4, border: "1.5px solid #bfdbfe", background: "#eff6ff", color: "#2563eb", borderRadius: 7, padding: "5px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 },
   deselectAllBtn: { display: "inline-flex", alignItems: "center", gap: 4, border: "1.5px solid #fecaca", background: "#fef2f2", color: "#dc2626", borderRadius: 7, padding: "5px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 },
   selectedBadge:  { display: "flex", alignItems: "center", gap: 5, margin: "6px 14px 0", padding: "4px 10px", background: "#dcfce7", color: "#16a34a", borderRadius: 7, fontSize: 11, fontWeight: 600, width: "fit-content" },
-
   userList:   { flex: 1, overflowY: "auto", padding: "4px 0" },
   usersCenter: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32 },
   userRow:    { display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", cursor: "pointer", borderBottom: "1px solid", transition: "background 0.1s" },
@@ -292,7 +267,6 @@ const s = {
   statusActive:  { background: "#dcfce7", color: "#16a34a" },
   statusBlocked: { background: "#fef2f2", color: "#dc2626" },
   statusInactive: { background: "#f1f5f9", color: "#64748b" },
-
   modalFooter: { display: "flex", alignItems: "center", gap: 8, padding: "12px 14px", borderTop: "1px solid #f1f5f9", background: "#f8fafc", flexShrink: 0 },
   modalError:  { padding: "6px 10px", background: "#fef2f2", color: "#dc2626", borderRadius: 7, fontSize: 12, border: "1px solid #fecaca" },
   modalSuccess: { padding: "6px 10px", background: "#dcfce7", color: "#16a34a", borderRadius: 7, fontSize: 12, border: "1px solid #bbf7d0" },
@@ -302,13 +276,7 @@ const s = {
 };
 
 const styleTag = document.createElement("style");
-styleTag.innerHTML = `
-  @keyframes spin { to { transform: rotate(360deg); } }
-  @keyframes modalIn { from { opacity: 0; transform: scale(0.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-`;
-if (!document.getElementById("report-page-styles")) {
-  styleTag.id = "report-page-styles";
-  document.head.appendChild(styleTag);
-}
+styleTag.innerHTML = `@keyframes spin{to{transform:rotate(360deg)}}@keyframes modalIn{from{opacity:0;transform:scale(0.95) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}`;
+if (!document.getElementById("report-page-styles")) { styleTag.id = "report-page-styles"; document.head.appendChild(styleTag); }
 
 export default ReportPages;

@@ -43,7 +43,7 @@ public class ExcelUploadService {
 
         try (Connection conn = dataSource.getConnection()) {
             byte[] guid = getSysGuid(conn);
-            insertToGtt(conn, guid, rows);
+            insertToGtt(conn, repId, guid, rows);
 
             String errMsg = callImportProcedure(conn, guid, repId, username);
             if (errMsg != null && !errMsg.isBlank()) {
@@ -62,7 +62,9 @@ public class ExcelUploadService {
         try (PreparedStatement ps = conn.prepareStatement(
                 "SELECT ROW_NUMBER, DATA FROM REP_CORE_TMP ORDER BY ROW_NUMBER");
              ResultSet rs = ps.executeQuery()) {
+            int count = 0;
             while (rs.next()) {
+                count++;
                 int rowNumber = rs.getInt("ROW_NUMBER");
                 String jsonStr = rs.getString("DATA");
                 Map<String, Object> jsonData = objectMapper.readValue(
@@ -75,15 +77,21 @@ public class ExcelUploadService {
 
     // ── Template path — xuddi shu connection dan ──────────
     private String getTemplatePath(Connection conn, UUID repId) throws Exception {
+        // Avval hex ni log qiling
         String hexId = repId.toString().replace("-", "").toUpperCase();
-        String sql = "SELECT template FROM rep_core_name WHERE id = HEXTORAW(?)";
+
+        // HEXTORAW o'rniga to'g'ridan-to'g'ri bytes bilan qidiring
+        String sql = "SELECT template FROM rep_core_name WHERE id = ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, hexId);
+            ps.setBytes(1, uuidToBytes(repId));
             try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) return rs.getString(1);
+                if (rs.next()) {
+                    String path = rs.getString(1);
+                    return path;
+                }
             }
         }
-        throw new RuntimeException("Template topilmadi: " + repId);
+        throw new RuntimeException("Template topilmadi repId: " + repId + " hex: " + hexId);
     }
 
     // ── Excel export ───────────────────────────────────────
@@ -250,15 +258,17 @@ public class ExcelUploadService {
 
     // ── GTT ga INSERT ─────────────────────────────────────
     private void insertToGtt(Connection conn,
+                             UUID repId,
                              byte[] guid,
                              List<Map<String, Object>> rows) throws Exception {
-        String sql = "INSERT INTO REP_CORE_EXCEL_TMP (REP_ID, ROW_NUMBER, IMPORT_DATA) VALUES (?, ?, ?)";
+        String sql = "INSERT INTO REP_CORE_EXCEL_TMP (ID, REP_ID, ROW_NUMBER, IMPORT_DATA) VALUES (?, ?, ?, ?)";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             for (int i = 0; i < rows.size(); i++) {
                 String json = objectMapper.writeValueAsString(rows.get(i));
-                ps.setBytes(1, guid);
-                ps.setInt(2, i + 1);
-                ps.setClob(3, new StringReader(json));
+                ps.setBytes(1, guid);                // ID     → SYS_GUID byte[]
+                ps.setBytes(2, uuidToBytes(repId));  // REP_ID → UUID → byte[]
+                ps.setInt(3, i + 1);                 // ROW_NUMBER
+                ps.setClob(4, new StringReader(json)); // IMPORT_DATA
                 ps.addBatch();
                 if ((i + 1) % 500 == 0) ps.executeBatch();
             }
@@ -273,6 +283,7 @@ public class ExcelUploadService {
                                        String username) throws Exception {
         long userId = getUserId(conn, username);
         byte[] repIdBytes = uuidToBytes(repId);
+
 
         String sql = "BEGIN REP_CORE_UTIL.Import_Excel(?, ?, ?, ?); END;";
         try (CallableStatement stmt = conn.prepareCall(sql)) {
@@ -363,4 +374,6 @@ public class ExcelUploadService {
         for (byte b : bytes) sb.append(String.format("%02X", b));
         return sb.toString();
     }
+
+
 }

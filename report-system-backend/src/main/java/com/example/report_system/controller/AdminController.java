@@ -62,7 +62,6 @@ public class AdminController {
 
     @PostMapping("/add")
     public String add(@RequestBody UserAddDto request) {
-        System.out.println(request);
         adminService.add(request);
         return "Successfully updated!";
     }

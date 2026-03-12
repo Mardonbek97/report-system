@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { api } from "./api";
 
 const Login = ({ onLogin }) => {
   const [formData, setFormData] = useState({ username: "", password: "" });
@@ -15,19 +16,16 @@ const Login = ({ onLogin }) => {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch("http://localhost:8080/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Accept-Language": "UZ" },
-        body: JSON.stringify({ username: formData.username, password: formData.password }),
+      const response = await api.post("/api/auth/login", {
+        username: formData.username,
+        password: formData.password,
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || "Login muvaffaqiyatsiz bo'ldi");
 
-      // Token va ma'lumotlarni saqlash
       localStorage.setItem("token", data.token || "");
       localStorage.setItem("username", formData.username);
 
-      // Role ni tokendan yoki responsdan olish
       let role = data.role || null;
       if (!role && data.token) {
         try {
@@ -37,9 +35,7 @@ const Login = ({ onLogin }) => {
       }
       if (role) localStorage.setItem("role", role);
 
-      // App.jsx ga xabar berish
       onLogin(formData.username);
-
     } catch (err) {
       setError(err.message || "Serverga ulanishda xatolik yuz berdi");
     } finally {

@@ -10,6 +10,8 @@ import com.example.report_system.service.ReportService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -26,6 +28,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -62,20 +65,6 @@ public class ReportController {
         return reportExecService.getParams(repId);
     }
 
-
-    /*@PostMapping("/generate")
-        public ResponseEntity<String> generateReport(@RequestBody ExecuteReportRequestDto request) throws Exception {
-
-            // Excel generate
-            byte[] excelBytes = reportExecService.executeAndExport(request);
-
-            // Faylga saqlash
-            String fileName = "report_" + System.currentTimeMillis() + ".xlsx";
-            String filePath = allowedExportDir + fileName;
-            Files.write(Paths.get(filePath), excelBytes);
-
-            return ResponseEntity.ok("Fayl saqlandi: " + filePath);
-    }*/
 
     @PostMapping("/generate")
     public ResponseEntity<String> generateReport(@RequestBody ExecuteReportRequestDto request) throws Exception {
@@ -134,14 +123,27 @@ public class ReportController {
     }
 
     @GetMapping("/report/logs")
-    public List<ReportExecLogDto> getReportLogs(
-            @RequestParam String username) {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+    public ResponseEntity<Map<String, Object>> getReportLogs(
+            @RequestParam String username,
+            @RequestParam(defaultValue = "0")  int page,
+            @RequestParam(defaultValue = "15") int size) {
 
-        Collection<? extends GrantedAuthority> authorities = auth.getAuthorities();
-        boolean isAdmin = authorities.stream()
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        boolean isAdmin = auth.getAuthorities().stream()
                 .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
 
-        return reportService.fetchTempData(username, isAdmin);
+        Page<ReportExecLogDto> pageResult = reportService.fetchTempData(username, isAdmin, page, size);
+
+        Map<String, Object> response = Map.of(
+                "content",       pageResult.getContent(),
+                "totalPages",    pageResult.getTotalPages(),
+                "totalElements", pageResult.getTotalElements(),
+                "number",        pageResult.getNumber(),
+                "size",          pageResult.getSize()
+        );
+
+        return ResponseEntity.ok(response);
     }
+
+
 }
