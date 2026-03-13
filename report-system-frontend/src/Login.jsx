@@ -147,7 +147,7 @@ const Login = ({ onLogin }) => {
           </div>
 
           <h1 style={{ margin: "0 0 5px", fontSize: 24, fontWeight: 800, color: "#0f172a", letterSpacing: "-0.5px" }}>
-            Xush kelibsiz 👋
+            Xush kelibsiz
           </h1>
           <p style={{ margin: "0 0 30px", fontSize: 14, color: "#64748b" }}>
             Davom etish uchun tizimga kiring
@@ -217,7 +217,7 @@ const Login = ({ onLogin }) => {
 
           <div style={{ marginTop: 26, paddingTop: 18, borderTop: "1px solid #f1f5f9", textAlign: "center" }}>
             <span style={{ fontSize: 12, color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>
-              © 2025 Report System
+              © 2026 Report System
             </span>
           </div>
 
