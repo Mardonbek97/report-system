@@ -9,7 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/admin")
@@ -46,13 +46,18 @@ public class AdminController {
     }
 
     @GetMapping("/userslist")
-    public List<UserListDto> findAll() {
+    public ResponseEntity<Map<String, Object>> findAll(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "") String search) {
         try {
-            return userService.getAll();
+            Map<String, Object> result = userService.getAll(page, size, search);
+            return ResponseEntity.ok(result);
         } catch (Exception e) {
-            throw e;
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
         }
     }
+
 
     @PostMapping("/block")
     public String bock(@RequestBody UserDto request) {

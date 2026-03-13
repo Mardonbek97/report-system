@@ -1,9 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { api } from "../api";
 
+const PAGE_SIZE = 18;
+
 const STATUS_COLORS = {
-  SUCCESS: { color: "#16a34a", bg: "#f0fdf4", border: "#bbf7d0", label: "Muvaffaqiyat" },
-  ERROR:   { color: "#dc2626", bg: "#fef2f2", border: "#fecaca", label: "Xatolik"      },
+  SUCCESS: { color: "#16a34a", bg: "#f0fdf4", border: "#bbf7d0", label: "Success" },
+  ERROR:   { color: "#dc2626", bg: "#fef2f2", border: "#fecaca", label: "Xatolik" },
 };
 const FORMAT_COLORS = {
   xlsx: { color: "#16a34a", bg: "#f0fdf4", border: "#bbf7d0" },
@@ -27,7 +29,6 @@ const getRole = () => {
   return (localStorage.getItem("role") || "USER").toUpperCase();
 };
 
-// ── StatusBadge ───────────────────────────────────────────────
 const StatusBadge = ({ status }) => {
   if (!status) return <span style={{ color: "#94a3b8", fontSize: 12 }}>Kutilmoqda</span>;
   const cfg = STATUS_COLORS[status] || { color: "#64748b", bg: "#f8fafc", border: "#e2e8f0", label: status };
@@ -39,32 +40,66 @@ const StatusBadge = ({ status }) => {
   );
 };
 
-// ── ScheduledLogsPage ─────────────────────────────────────────
 const ScheduledLogsPage = () => {
   const isAdmin = getRole() === "ROLE_ADMIN";
-  const currentUser = localStorage.getItem("username") || "";
 
-  const [schedules, setSchedules]     = useState([]);
-  const [loading, setLoading]         = useState(true);
-  const [error, setError]             = useState("");
-  const [search, setSearch]           = useState("");
+  const [schedules, setSchedules]       = useState([]);
+  const [loading, setLoading]           = useState(true);
+  const [error, setError]               = useState("");
+  const [searchInput, setSearchInput]   = useState("");
+  const [search, setSearch]             = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
-  const [expandedId, setExpandedId]   = useState(null);
-  const [downloading, setDownloading] = useState({});
+  const [expandedId, setExpandedId]     = useState(null);
+  const [downloading, setDownloading]   = useState({});
   const [downloadErrors, setDownloadErrors] = useState({});
 
-  useEffect(() => { fetchData(); }, []);
+  // Pagination
+  const [page, setPage]                 = useState(0);
+  const [totalPages, setTotalPages]     = useState(0);
+  const [totalElements, setTotalElements] = useState(0);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async (pg = 0, q = "") => {
     setLoading(true); setError("");
     try {
-      const res = await api.get("/api/schedules");
+      const res = await api.get(
+        `/api/schedules?page=${pg}&size=${PAGE_SIZE}&search=${encodeURIComponent(q)}`
+      );
       if (!res.ok) throw new Error("Yuklashda xatolik");
       const data = await res.json();
-      // Faqat ishlagan (last_run bor) larni ko'rsatamiz
-      setSchedules(data);
+      if (Array.isArray(data)) {
+        setSchedules(data);
+        setTotalPages(1);
+        setTotalElements(data.length);
+        setPage(0);
+      } else {
+        setSchedules(data.content ?? []);
+        setTotalPages(data.totalPages ?? 1);
+        setTotalElements(data.totalElements ?? 0);
+        setPage(data.number ?? 0);
+      }
     } catch (e) { setError(e.message); }
     finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchData(0, ""); }, []);
+
+  // Debounced search
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setSearch(searchInput);
+      fetchData(0, searchInput);
+      setPage(0);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  const goPage = (p) => fetchData(p, search);
+
+  const getPageRange = () => {
+    const delta = 2, range = [];
+    for (let i = Math.max(0, page - delta); i <= Math.min(totalPages - 1, page + delta); i++)
+      range.push(i);
+    return range;
   };
 
   const handleDownload = async (scheduleId, filePath) => {
@@ -88,18 +123,16 @@ const ScheduledLogsPage = () => {
     }
   };
 
-  const filtered = schedules.filter(s => {
-    const matchSearch = s.repName?.toLowerCase().includes(search.toLowerCase()) ||
-                        s.username?.toLowerCase().includes(search.toLowerCase());
-    const matchStatus = statusFilter === "ALL"
-      ? true
-      : statusFilter === "PENDING"
-        ? !s.lastStatus
-        : s.lastStatus === statusFilter;
-    return matchSearch && matchStatus;
+  // Status filter — frontend da (server search bilan birga)
+  const filtered = schedules.filter(sc => {
+    if (statusFilter === "ALL") return true;
+    if (statusFilter === "PENDING") return !sc.lastStatus && sc.active;
+    if (statusFilter === "PAUSED")  return !sc.active;
+    return sc.lastStatus === statusFilter;
   });
 
-  const statuses = ["ALL", "SUCCESS", "ERROR", "PENDING"];
+  const statuses = ["ALL", "SUCCESS", "ERROR", "PENDING", "PAUSED"];
+  const statusLabels = { ALL: "Barchasi", SUCCESS: "Success", ERROR: "Xatolik", PENDING: "Kutilmoqda", PAUSED: "To'xtatilgan" };
 
   return (
     <div style={s.wrapper}>
@@ -113,9 +146,9 @@ const ScheduledLogsPage = () => {
       <div style={s.header}>
         <div>
           <h2 style={s.title}>Scheduled Report Logs</h2>
-          <p style={s.subtitle}>Avtomatik ishga tushirilgan reportlar tarixi va fayllarni yuklab olish</p>
+          <p style={s.subtitle}>Avtomatik ishga tushirilgan reportlar tarixi</p>
         </div>
-        <button onClick={fetchData} style={s.refreshBtn}>
+        <button onClick={() => fetchData(page, search)} style={s.refreshBtn}>
           <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2">
             <path d="M3 12a9 9 0 019-9 9.75 9.75 0 016.74 2.74L21 8M21 3v5h-5M21 12a9 9 0 01-9 9 9.75 9.75 0 01-6.74-2.74L3 16M3 21v-5h5"/>
           </svg>
@@ -125,17 +158,15 @@ const ScheduledLogsPage = () => {
 
       {/* Filters */}
       <div style={s.filtersRow}>
-        {/* Search */}
         <div style={s.searchWrap}>
           <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="#94a3b8" strokeWidth="2" style={{ flexShrink: 0 }}>
             <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
           </svg>
-          <input
-            value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Report yoki foydalanuvchi nomi..."
-            style={s.searchInput}
-          />
-          {search && <button onClick={() => setSearch("")} style={s.clearBtn}>✕</button>}
+          <input value={searchInput} onChange={e => setSearchInput(e.target.value)}
+            placeholder="Report yoki foydalanuvchi nomi..." style={s.searchInput} />
+          {searchInput && (
+            <button onClick={() => { setSearchInput(""); setSearch(""); fetchData(0, ""); }} style={s.clearBtn}>✕</button>
+          )}
         </div>
 
         {/* Status filter */}
@@ -150,14 +181,14 @@ const ScheduledLogsPage = () => {
                 color: active ? (cfg ? cfg.color : "#0f172a") : "#64748b",
                 border: `1.5px solid ${active ? (cfg ? cfg.border : "#cbd5e1") : "transparent"}`,
               }}>
-                {st === "ALL" ? "Barchasi" : st === "PENDING" ? "Kutilmoqda" : cfg?.label || st}
+                {statusLabels[st] || st}
               </button>
             );
           })}
         </div>
 
         <div style={{ marginLeft: "auto", fontSize: 12, color: "#94a3b8" }}>
-          {filtered.length} ta yozuv
+          {filtered.length} / {totalElements} ta
         </div>
       </div>
 
@@ -168,9 +199,7 @@ const ScheduledLogsPage = () => {
           <p style={{ color: "#94a3b8", marginTop: 12, fontSize: 14 }}>Yuklanmoqda...</p>
         </div>
       ) : error ? (
-        <div style={s.center}>
-          <div style={s.errBox}>⚠ {error}</div>
-        </div>
+        <div style={s.center}><div style={s.errBox}>⚠ {error}</div></div>
       ) : filtered.length === 0 ? (
         <div style={s.center}>
           <svg width="48" height="48" fill="none" viewBox="0 0 24 24" stroke="#cbd5e1" strokeWidth="1.2">
@@ -179,162 +208,148 @@ const ScheduledLogsPage = () => {
           <p style={{ color: "#94a3b8", marginTop: 10, fontSize: 14 }}>Log topilmadi</p>
         </div>
       ) : (
-        <div style={s.tableWrap}>
-          <table style={s.table}>
-            <thead>
-              <tr style={s.thead}>
-                {["#", "Report", ...(isAdmin ? ["Foydalanuvchi"] : []), "Jadval", "Oxirgi run", "Holat", "Format", "Fayl", ""].map(h => (
-                  <th key={h} style={s.th}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((sc, i) => {
-                const fc = FORMAT_COLORS[sc.fileFormat] || FORMAT_COLORS.xlsx;
-                const hasFile = !!sc.lastFile;
-                const isDownloading = downloading[sc.id];
-                const dlError = downloadErrors[sc.id];
+        <>
+          <div style={s.tableWrap}>
+            <table style={s.table}>
+              <thead>
+                <tr style={s.thead}>
+                  {["#", "Report", ...(isAdmin ? ["Foydalanuvchi"] : []), "Jadval", "Oxirgi run", "Holat", "Format", "Fayl", ""].map(h => (
+                    <th key={h} style={s.th}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((sc, i) => {
+                  const fc = FORMAT_COLORS[sc.fileFormat] || FORMAT_COLORS.xlsx;
+                  const hasFile = !!sc.lastFile;
+                  const isDownloading = downloading[sc.id];
+                  const dlError = downloadErrors[sc.id];
 
-                return (
-                  <>
-                    <tr key={sc.id} className="slog-row"
-                      style={{ ...s.tr, animation: `fadeIn 0.2s ease ${i * 0.02}s both` }}>
-                      <td style={{ ...s.td, color: "#94a3b8" }}>{i + 1}</td>
-                      <td style={s.td}>
-                        <div style={{ fontWeight: 600, color: "#0f172a", fontSize: 13 }}>{sc.repName}</div>
-                        <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 1 }}>
-                          {sc.cronExpr ? `🔁 ${sc.cronExpr}` : `⏱ ${fmtDate(sc.runAt)}`}
-                        </div>
-                      </td>
-                      {isAdmin && (
+                  return (
+                    <>
+                      <tr key={sc.id} className="slog-row"
+                        style={{ ...s.tr, animation: `fadeIn 0.2s ease ${i * 0.02}s both` }}>
+                        <td style={{ ...s.td, color: "#94a3b8" }}>{page * PAGE_SIZE + i + 1}</td>
                         <td style={s.td}>
-                          <span style={s.userChip}>
-                            <span style={s.userDot}>{(sc.username || "?")[0].toUpperCase()}</span>
-                            {sc.username}
+                          <div style={{ fontWeight: 600, color: "#0f172a", fontSize: 13 }}>{sc.repName}</div>
+                          <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 1 }}>
+                            {sc.cronExpr ? `🔁 ${sc.cronExpr}` : `⏱ ${fmtDate(sc.runAt)}`}
+                          </div>
+                        </td>
+                        {isAdmin && (
+                          <td style={s.td}>
+                            <span style={s.userChip}>
+                              <span style={s.userDot}>{(sc.username || "?")[0].toUpperCase()}</span>
+                              {sc.username}
+                            </span>
+                          </td>
+                        )}
+                        <td style={s.td}>
+                          {(() => {
+                            if (!sc.cronExpr && sc.lastRun) {
+                              if (sc.lastStatus === "SUCCESS") return <StatusChip color="#16a34a" bg="#f0fdf4" border="#bbf7d0" label="Finished" />;
+                              if (sc.lastStatus === "ERROR")   return <StatusChip color="#dc2626" bg="#fef2f2" border="#fecaca" label="Error" />;
+                            }
+                            if (!sc.active)  return <StatusChip color="#94a3b8" bg="#f8fafc" border="#e2e8f0" label="Paused" />;
+                            if (!sc.lastRun) return <StatusChip color="#d97706" bg="#fffbeb" border="#fde68a" label="Pending" />;
+                            if (sc.lastStatus === "ERROR") return <StatusChip color="#dc2626" bg="#fef2f2" border="#fecaca" label="Error" />;
+                            return <StatusChip color="#2563eb" bg="#eff6ff" border="#bfdbfe" label="Active" spin />;
+                          })()}
+                        </td>
+                        <td style={{ ...s.td, fontSize: 12, color: "#475569" }}>{fmtDate(sc.lastRun)}</td>
+                        <td style={s.td}><StatusBadge status={sc.lastStatus} /></td>
+                        <td style={s.td}>
+                          <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, fontSize: 11, fontWeight: 700, background: fc.bg, color: fc.color, border: `1px solid ${fc.border}` }}>
+                            .{sc.fileFormat}
                           </span>
                         </td>
-                      )}
-                      <td style={s.td}>
-                        {(() => {
-                          // Bir martalik — ishlagan bo'lsa Finished
-                          if (!sc.cronExpr && sc.lastRun) {
-                            if (sc.lastStatus === "SUCCESS") return (
-                              <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 10px", borderRadius: 99, background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", display: "inline-flex", alignItems: "center", gap: 4 }}>
-                                <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#16a34a" }} />Finished
-                              </span>
-                            );
-                            if (sc.lastStatus === "ERROR") return (
-                              <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 10px", borderRadius: 99, background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", display: "inline-flex", alignItems: "center", gap: 4 }}>
-                                <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#dc2626" }} />Error
-                              </span>
-                            );
-                          }
-                          // Cron yoki hali ishlamagan
-                          if (!sc.active) return (
-                            <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 10px", borderRadius: 99, background: "#f8fafc", color: "#94a3b8", border: "1px solid #e2e8f0", display: "inline-flex", alignItems: "center", gap: 4 }}>
-                              <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#94a3b8" }} />Paused
-                            </span>
-                          );
-                          if (!sc.lastRun) return (
-                            <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 10px", borderRadius: 99, background: "#fffbeb", color: "#d97706", border: "1px solid #fde68a", display: "inline-flex", alignItems: "center", gap: 4 }}>
-                              <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#d97706" }} />Pending
-                            </span>
-                          );
-                          if (sc.lastStatus === "ERROR") return (
-                            <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 10px", borderRadius: 99, background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", display: "inline-flex", alignItems: "center", gap: 4 }}>
-                              <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#dc2626" }} />Error
-                            </span>
-                          );
-                          return (
-                            <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 10px", borderRadius: 99, background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe", display: "inline-flex", alignItems: "center", gap: 4 }}>
-                              <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#2563eb", animation: "spin 1.5s linear infinite" }} />Active
-                            </span>
-                          );
-                        })()}
-                      </td>
-                      <td style={{ ...s.td, fontSize: 12, color: "#475569" }}>
-                        {fmtDate(sc.lastRun)}
-                      </td>
-                      <td style={s.td}>
-                        <StatusBadge status={sc.lastStatus} />
-                      </td>
-                      <td style={s.td}>
-                        <span style={{
-                          display: "inline-block", padding: "2px 8px", borderRadius: 6,
-                          fontSize: 11, fontWeight: 700,
-                          background: fc.bg, color: fc.color, border: `1px solid ${fc.border}`,
-                        }}>.{sc.fileFormat}</span>
-                      </td>
-                      <td style={s.td}>
-                        {hasFile ? (
-                          <div>
-                            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4, fontFamily: "monospace",
-                              maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                              title={sc.lastFile}>
-                              📄 {sc.lastFile.split(/[\\/]/).pop()}
+                        <td style={s.td}>
+                          {hasFile ? (
+                            <div>
+                              <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4, fontFamily: "monospace", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                                title={sc.lastFile}>
+                                📄 {sc.lastFile.split(/[\\/]/).pop()}
+                              </div>
+                              <button onClick={() => handleDownload(sc.id, sc.lastFile)} disabled={isDownloading}
+                                style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: "pointer", border: `1.5px solid ${fc.border}`, background: isDownloading ? "#f8fafc" : fc.bg, color: isDownloading ? "#94a3b8" : fc.color, opacity: isDownloading ? 0.7 : 1 }}>
+                                {isDownloading
+                                  ? <><span style={s.btnSpinner} /> Yuklanmoqda...</>
+                                  : <><svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg> Yuklab olish</>}
+                              </button>
+                              {dlError && <div style={{ fontSize: 10, color: "#dc2626", marginTop: 3 }}>⚠ {dlError}</div>}
                             </div>
-                            <button
-                              onClick={() => handleDownload(sc.id, sc.lastFile)}
-                              disabled={isDownloading}
-                              style={{
-                                display: "inline-flex", alignItems: "center", gap: 5,
-                                padding: "4px 10px", borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: "pointer",
-                                border: `1.5px solid ${fc.border}`,
-                                background: isDownloading ? "#f8fafc" : fc.bg,
-                                color: isDownloading ? "#94a3b8" : fc.color,
-                                opacity: isDownloading ? 0.7 : 1,
-                              }}>
-                              {isDownloading ? (
-                                <><span style={s.btnSpinner} /> Yuklanmoqda...</>
-                              ) : (
-                                <><svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                                  <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-                                </svg> Yuklab olish</>
-                              )}
+                          ) : (
+                            <span style={{ color: "#cbd5e1", fontSize: 12 }}>{sc.lastStatus === "ERROR" ? "Fayl yaratilmadi" : "—"}</span>
+                          )}
+                        </td>
+                        <td style={s.td}>
+                          {sc.lastError && (
+                            <button onClick={() => setExpandedId(expandedId === sc.id ? null : sc.id)}
+                              style={{ border: "none", background: "#fef2f2", color: "#ef4444", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 11 }}>
+                              {expandedId === sc.id ? "▲" : "▼"}
                             </button>
-                            {dlError && (
-                              <div style={{ fontSize: 10, color: "#dc2626", marginTop: 3 }}>⚠ {dlError}</div>
-                            )}
-                          </div>
-                        ) : (
-                          <span style={{ color: "#cbd5e1", fontSize: 12 }}>
-                            {sc.lastStatus === "ERROR" ? "Fayl yaratilmadi" : "—"}
-                          </span>
-                        )}
-                      </td>
-                      <td style={s.td}>
-                        {sc.lastError && (
-                          <button onClick={() => setExpandedId(expandedId === sc.id ? null : sc.id)}
-                            style={{ border: "none", background: "#fef2f2", color: "#ef4444", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 11 }}>
-                            {expandedId === sc.id ? "▲" : "▼"}
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-
-                    {/* Error detail */}
-                    {expandedId === sc.id && sc.lastError && (
-                      <tr key={sc.id + "-err"}>
-                        <td colSpan={isAdmin ? 9 : 8} style={{ padding: 0, background: "#fef2f2" }}>
-                          <div style={{ padding: "10px 16px", borderTop: "1px solid #fecaca" }}>
-                            <strong style={{ fontSize: 12, color: "#dc2626" }}>Xatolik xabari:</strong>
-                            <pre style={{ margin: "5px 0 0", fontSize: 12, color: "#dc2626", whiteSpace: "pre-wrap", wordBreak: "break-all", background: "#fff", border: "1px solid #fecaca", borderRadius: 6, padding: 10 }}>
-                              {sc.lastError}
-                            </pre>
-                          </div>
+                          )}
                         </td>
                       </tr>
-                    )}
-                  </>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+
+                      {expandedId === sc.id && sc.lastError && (
+                        <tr key={sc.id + "-err"}>
+                          <td colSpan={isAdmin ? 9 : 8} style={{ padding: 0, background: "#fef2f2" }}>
+                            <div style={{ padding: "10px 16px", borderTop: "1px solid #fecaca" }}>
+                              <strong style={{ fontSize: 12, color: "#dc2626" }}>Xatolik xabari:</strong>
+                              <pre style={{ margin: "5px 0 0", fontSize: 12, color: "#dc2626", whiteSpace: "pre-wrap", wordBreak: "break-all", background: "#fff", border: "1px solid #fecaca", borderRadius: 6, padding: 10 }}>
+                                {sc.lastError}
+                              </pre>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div style={s.pagination}>
+              <span style={s.pageInfo}>
+                {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, totalElements)} / {totalElements} ta
+              </span>
+              <div style={s.pageButtons}>
+                <button onClick={() => goPage(0)} disabled={page === 0}
+                  style={{ ...s.pageBtn, ...(page === 0 ? s.pageBtnDisabled : {}) }}>«</button>
+                <button onClick={() => goPage(page - 1)} disabled={page === 0}
+                  style={{ ...s.pageBtn, ...(page === 0 ? s.pageBtnDisabled : {}) }}>‹</button>
+                {getPageRange()[0] > 0 && <span style={s.ellipsis}>…</span>}
+                {getPageRange().map(p => (
+                  <button key={p} onClick={() => goPage(p)}
+                    style={{ ...s.pageBtn, ...(p === page ? s.pageBtnActive : {}) }}>
+                    {p + 1}
+                  </button>
+                ))}
+                {getPageRange()[getPageRange().length - 1] < totalPages - 1 && <span style={s.ellipsis}>…</span>}
+                <button onClick={() => goPage(page + 1)} disabled={page >= totalPages - 1}
+                  style={{ ...s.pageBtn, ...(page >= totalPages - 1 ? s.pageBtnDisabled : {}) }}>›</button>
+                <button onClick={() => goPage(totalPages - 1)} disabled={page >= totalPages - 1}
+                  style={{ ...s.pageBtn, ...(page >= totalPages - 1 ? s.pageBtnDisabled : {}) }}>»</button>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
 };
+
+// Mini status chip helper
+const StatusChip = ({ color, bg, border, label, spin }) => (
+  <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 10px", borderRadius: 99, background: bg, color, border: `1px solid ${border}`, display: "inline-flex", alignItems: "center", gap: 4 }}>
+    <span style={{ width: 5, height: 5, borderRadius: "50%", background: color, ...(spin ? { animation: "spin 1.5s linear infinite" } : {}) }} />
+    {label}
+  </span>
+);
 
 const s = {
   wrapper:    { padding: "16px 20px", height: "100%", overflowY: "auto", boxSizing: "border-box", background: "#f8fafc", fontFamily: "'Segoe UI', system-ui, sans-serif" },
@@ -358,6 +373,13 @@ const s = {
   userChip:   { display: "inline-flex", alignItems: "center", gap: 6 },
   userDot:    { width: 20, height: 20, borderRadius: "50%", background: "#eff6ff", color: "#2563eb", fontSize: 10, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
   btnSpinner: { width: 10, height: 10, border: "2px solid #e2e8f0", borderTop: "2px solid #94a3b8", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" },
+  pagination:      { display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14, flexWrap: "wrap", gap: 8 },
+  pageInfo:        { fontSize: 12, color: "#64748b" },
+  pageButtons:     { display: "flex", alignItems: "center", gap: 4 },
+  pageBtn:         { minWidth: 32, height: 32, padding: "0 8px", borderRadius: 8, border: "1.5px solid #e2e8f0", background: "#fff", color: "#334155", fontSize: 13, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" },
+  pageBtnActive:   { background: "#2563eb", color: "#fff", border: "1.5px solid #2563eb" },
+  pageBtnDisabled: { opacity: 0.35, cursor: "not-allowed" },
+  ellipsis:        { fontSize: 14, color: "#94a3b8", padding: "0 4px" },
 };
 
 export default ScheduledLogsPage;

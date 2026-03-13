@@ -4,7 +4,6 @@ import com.example.report_system.dto.AuthResponseDto;
 import com.example.report_system.dto.LoginRequestDto;
 import com.example.report_system.enums.ApplanguageEnum;
 import com.example.report_system.service.AuthService;
-import jakarta.annotation.security.PermitAll;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 

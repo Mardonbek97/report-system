@@ -3,7 +3,7 @@ import { api } from "../api";
 
 const STATUS_CONFIG = {
   Running:  { color: "#3b82f6", bg: "#eff6ff", border: "#bfdbfe", label: "Jarayonda"   },
-  Finished: { color: "#22c55e", bg: "#f0fdf4", border: "#bbf7d0", label: "Muvaffaqiyat" },
+  Finished: { color: "#22c55e", bg: "#f0fdf4", border: "#bbf7d0", label: "Success" },
   Error:    { color: "#ef4444", bg: "#fef2f2", border: "#fecaca", label: "Xatolik"     },
 };
 

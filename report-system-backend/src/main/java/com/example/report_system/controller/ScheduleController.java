@@ -4,6 +4,7 @@ import com.example.report_system.dto.ScheduleDto;
 import com.example.report_system.entity.Users;
 import com.example.report_system.repository.ScheduleRepository;
 import com.example.report_system.repository.UserRepository;
+import com.example.report_system.service.SchedulerService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
@@ -26,24 +27,33 @@ import java.util.Map;
 @RequestMapping("/schedules")
 public class ScheduleController {
 
+    private final SchedulerService schedulerService;
     private final ScheduleRepository repo;
-    private final UserRepository userRepository;
     @Value("${report.scheduled-reports.dir}")
     private String scheduledReportsDir;
 
-    public ScheduleController(ScheduleRepository repo,
-                              UserRepository userRepository) {
+    public ScheduleController(SchedulerService schedulerService, ScheduleRepository repo, UserRepository userRepository) {
+        this.schedulerService = schedulerService;
         this.repo = repo;
-        this.userRepository = userRepository;
     }
+
 
     // ── GET /api/schedules ───────────────────────────────────
     @GetMapping
-    public ResponseEntity<List<ScheduleDto>> getAll() {
-        Authentication auth = getAuth();
-        boolean isAdmin = isAdmin(auth);
-        Long userId = getUserId(auth.getName());
-        return ResponseEntity.ok(repo.findByUser(userId, isAdmin));
+    public ResponseEntity<Map<String, Object>> getAll(
+            @RequestParam(defaultValue = "0")  int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "")   String search) {
+        try {
+            Authentication auth = getAuth();
+            boolean isAdmin = isAdmin(auth);
+            Long userId = getUserId(auth.getName());
+            Map<String, Object> result = schedulerService.findByUser(userId, isAdmin, page, size, search);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
     }
 
     // ── POST /api/schedules ──────────────────────────────────

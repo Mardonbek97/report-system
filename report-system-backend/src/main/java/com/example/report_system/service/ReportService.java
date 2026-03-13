@@ -31,13 +31,52 @@ public class ReportService {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    public List<ReportListDto> getAllReport() {
-        List<ReportListDto> dto = reportRepository.findAll()
-                .stream()
-                .map(reports -> new ReportListDto(reports.getId(), reports.getName()))
-                .collect(Collectors.toUnmodifiableList());
+    public Map<String, Object> getAllReport(int page, int size, String search) {
+        int offset    = page * size;
+        int rownumMax = offset + size;
+        boolean hasSearch = search != null && !search.trim().isEmpty();
+        String like = "%" + (hasSearch ? search.trim().toLowerCase() : "") + "%";
 
-        return dto;
+        String whereClause = hasSearch ? " WHERE LOWER(r.name) LIKE ? " : " ";
+
+        // ── Count ──────────────────────────────────────────────────
+        String countSql = "SELECT COUNT(*) FROM rep_core_name r" + whereClause;
+        Integer total = hasSearch
+                ? jdbcTemplate.queryForObject(countSql, Integer.class, like)
+                : jdbcTemplate.queryForObject(countSql, Integer.class);
+        if (total == null) total = 0;
+
+        // ── Oracle 11g ROWNUM pagination ───────────────────────────
+        String innerSql =
+                "SELECT r.id, r.name FROM rep_core_name r" + whereClause + "ORDER BY r.name ASC";
+
+        String sql =
+                "SELECT * FROM (" +
+                        "  SELECT t.*, ROWNUM rn FROM (" + innerSql + ") t" +
+                        "  WHERE ROWNUM <= ?" +
+                        ") WHERE rn > ?";
+
+        List<ReportListDto> content = hasSearch
+                ? jdbcTemplate.query(sql,
+                (rs, i) -> new ReportListDto(
+                        toUuid(rs.getBytes("id")),
+                        rs.getString("name")),
+                like, rownumMax, offset)
+                : jdbcTemplate.query(sql,
+                (rs, i) -> new ReportListDto(
+                        toUuid(rs.getBytes("id")),
+                        rs.getString("name")),
+                rownumMax, offset);
+
+        int totalPages = size > 0 ? (int) Math.ceil((double) total / size) : 1;
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("content",       content);
+        result.put("totalElements", total);
+        result.put("totalPages",    Math.max(1, totalPages));
+        result.put("number",        page);
+        result.put("size",          size);
+        return result;
     }
 
     public List<ReportListDto> getAllByUser(String username) {
@@ -117,5 +156,10 @@ public class ReportService {
         return new PageImpl<>(content, PageRequest.of(page, size), total);
     }
 
+    private java.util.UUID toUuid(byte[] bytes) {
+        if (bytes == null) return null;
+        java.nio.ByteBuffer bb = java.nio.ByteBuffer.wrap(bytes);
+        return new java.util.UUID(bb.getLong(), bb.getLong());
+    }
 
 }

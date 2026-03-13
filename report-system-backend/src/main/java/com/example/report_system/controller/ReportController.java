@@ -52,13 +52,20 @@ public class ReportController {
     }
 
     @GetMapping("")
-    public List<ReportListDto> getAll() {
+    public ResponseEntity<Map<String, Object>> getAll(
+            @RequestParam(defaultValue = "0")  int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "")   String search) {
         try {
-            return reportService.getAllReport();
+            Map<String, Object> result = reportService.getAllReport(page, size, search);
+            return ResponseEntity.ok(result);
         } catch (Exception e) {
-            throw e;
+            e.printStackTrace();
+            String msg = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
+            return ResponseEntity.status(500).body(Map.of("error", msg != null ? msg : e.toString()));
         }
     }
+
 
     @GetMapping("/report")
     public List<ReportParamsExecDto> getParam(@RequestParam UUID repId, @RequestHeader(value = "Accept-Language") ApplanguageEnum lang) {

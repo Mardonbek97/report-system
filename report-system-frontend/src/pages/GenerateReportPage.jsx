@@ -208,9 +208,9 @@ const ScheduleModal = ({ report, onClose }) => {
         if (!res.ok) throw new Error("Parametrlarni yuklashda xatolik");
         const data = await res.json();
         const nonUploadParams = data.filter(p => resolveInputType(p.paramType) !== "upload");
-        // Barcha parametrlar upload bo'lsa Schedule qo'yib bo'lmaydi
+        // Barcha parametrlar upload bo'lsa jadval qo'yib bo'lmaydi
         if (data.length > 0 && nonUploadParams.length === 0) {
-          setError("Bu report faqat fayl yuklash parametrini talab qiladi — Schedule qo'yib bo'lmaydi.");
+          setError("Bu report faqat fayl yuklash parametrini talab qiladi — jadval qo'yib bo'lmaydi.");
           setParamsLoading(false);
           return;
         }
@@ -277,7 +277,7 @@ const ScheduleModal = ({ report, onClose }) => {
               </svg>
             </div>
             <div>
-              <div style={m.headTitle}>Schedule sozlash</div>
+              <div style={m.headTitle}>Jadval sozlash</div>
               <div style={m.headSub}>{report.name}</div>
             </div>
           </div>
@@ -286,7 +286,7 @@ const ScheduleModal = ({ report, onClose }) => {
 
         {/* Steps indicator */}
         <div style={m.steps}>
-          {[{ n: 1, label: "Parametrlar" }, { n: 2, label: "Schedule" }].map(st => (
+          {[{ n: 1, label: "Parametrlar" }, { n: 2, label: "Jadval" }].map(st => (
             <div key={st.n} style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <div style={{
                 width: 24, height: 24, borderRadius: "50%", display: "flex",
@@ -363,7 +363,7 @@ const ScheduleModal = ({ report, onClose }) => {
             )
           )}
 
-          {/* STEP 2: Schedule sozlamalari */}
+          {/* STEP 2: Jadval sozlamalari */}
           {step === 2 && (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
 
@@ -389,7 +389,7 @@ const ScheduleModal = ({ report, onClose }) => {
 
               {/* Tur */}
               <div>
-                <label style={m.label}>Schedule turi</label>
+                <label style={m.label}>Jadval turi</label>
                 <div style={{ display: "flex", gap: 7 }}>
                   {[
                     { val: "cron",    icon: "🔁", label: "Takroriy (Cron)" },
@@ -450,7 +450,7 @@ const ScheduleModal = ({ report, onClose }) => {
               </div>
 
               {error   && <div style={m.errBox}>⚠ {error}</div>}
-              {success && <div style={m.successBox}>✓ Schedule muvaffaqiyatli yaratildi!</div>}
+              {success && <div style={m.successBox}>✓ Jadval muvaffaqiyatli yaratildi!</div>}
             </div>
           )}
         </div>
@@ -470,7 +470,7 @@ const ScheduleModal = ({ report, onClose }) => {
               <button onClick={() => setStep(1)} style={m.cancelBtn}>← Orqaga</button>
               <button onClick={handleSave} disabled={saving || success}
                 style={{ ...m.nextBtn, opacity: saving || success ? 0.7 : 1 }}>
-                {saving ? "Saqlanmoqda..." : "✓ Schedule yaratish"}
+                {saving ? "Saqlanmoqda..." : "✓ Jadval yaratish"}
               </button>
             </>
           )}
@@ -481,42 +481,69 @@ const ScheduleModal = ({ report, onClose }) => {
 };
 
 // ── Main Page ──────────────────────────────────────────────────
+const PAGE_SIZE = 18;
+
 const GenerateReportPage = () => {
   const [reports, setReports]               = useState([]);
   const [loading, setLoading]               = useState(true);
   const [error, setError]                   = useState("");
+  const [searchInput, setSearchInput]       = useState("");
   const [search, setSearch]                 = useState("");
   const [scheduleReport, setScheduleReport] = useState(null);
 
-  useEffect(() => {
-    const fetch_ = async () => {
-      setLoading(true); setError("");
-      try {
-        const res = await api.get("/api/reports");
-        if (!res.ok) throw new Error("Ma'lumotlarni yuklashda xatolik");
-        setReports(await res.json());
-      } catch (err) { setError(err.message); }
-      finally { setLoading(false); }
-    };
-    fetch_();
-  }, []);
+  // Pagination
+  const [page, setPage]                     = useState(0);
+  const [totalPages, setTotalPages]         = useState(0);
+  const [totalElements, setTotalElements]   = useState(0);
 
-  const filtered = reports.filter(r => r.name?.toLowerCase().includes(search.toLowerCase()));
+  const fetchReports = async (pg = 0, q = "") => {
+    setLoading(true); setError("");
+    try {
+      const res = await api.get(
+        `/api/reports?page=${pg}&size=${PAGE_SIZE}&search=${encodeURIComponent(q)}`
+      );
+      if (!res.ok) throw new Error("Ma'lumotlarni yuklashda xatolik");
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setReports(data);
+        setTotalPages(1);
+        setTotalElements(data.length);
+        setPage(0);
+      } else {
+        setReports(data.content ?? []);
+        setTotalPages(data.totalPages ?? 1);
+        setTotalElements(data.totalElements ?? 0);
+        setPage(data.number ?? 0);
+      }
+    } catch (err) { setError(err.message); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { fetchReports(0, ""); }, []);
+
+  // Debounced search
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setSearch(searchInput);
+      fetchReports(0, searchInput);
+      setPage(0);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  const goPage = (p) => fetchReports(p, search);
+
+  const getPageRange = () => {
+    const delta = 2, range = [];
+    for (let i = Math.max(0, page - delta); i <= Math.min(totalPages - 1, page + delta); i++)
+      range.push(i);
+    return range;
+  };
 
   const handleOpen = (report) => {
     localStorage.setItem(`exec_report_${report.id}`, JSON.stringify(report));
     window.open(`/?repId=${report.id}`, "_blank");
   };
-
-  if (loading) return (
-    <div style={s.center}>
-      <div style={s.spinner} />
-      <p style={{ color: "#94a3b8", marginTop: 12, fontSize: 13 }}>Yuklanmoqda...</p>
-    </div>
-  );
-  if (error) return (
-    <div style={s.center}><div style={s.errorBox}>⚠ {error}</div></div>
-  );
 
   return (
     <div style={s.wrapper}>
@@ -529,13 +556,13 @@ const GenerateReportPage = () => {
       <div style={s.pageHeader}>
         <div>
           <h2 style={s.pageTitle}>Generate Report</h2>
-          <p style={s.pageSubtitle}>Reportni tanlang — ochish yoki Schedulega qo'shing</p>
+          <p style={s.pageSubtitle}>Reportni tanlang — ochish yoki jadvalga qo'shing</p>
         </div>
         <div style={s.reportCount}>
           <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="#2563eb">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
-          {reports.length} ta
+          {totalElements} ta
         </div>
       </div>
 
@@ -543,75 +570,116 @@ const GenerateReportPage = () => {
         <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="#94a3b8" style={{ flexShrink: 0 }}>
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 105 11a6 6 0 0012 0z" />
         </svg>
-        <input value={search} onChange={e => setSearch(e.target.value)}
+        <input value={searchInput} onChange={e => setSearchInput(e.target.value)}
           placeholder="Report nomi bo'yicha qidirish..." style={s.searchInput} />
-        {search && <button onClick={() => setSearch("")} style={s.clearBtn}>✕</button>}
+        {searchInput && (
+          <button onClick={() => { setSearchInput(""); setSearch(""); fetchReports(0, ""); }}
+            style={s.clearBtn}>✕</button>
+        )}
       </div>
 
-      <div style={s.tableWrap}>
-        <table style={s.table}>
-          <colgroup>
-            <col style={{ width: "52px" }} />
-            <col />
-            <col style={{ width: "240px" }} />
-          </colgroup>
-          <thead>
-            <tr style={s.theadRow}>
-              <th style={s.th}>#</th>
-              <th style={s.th}>Report nomi</th>
-              <th style={{ ...s.th, textAlign: "left", paddingLeft: 8 }}>Amal</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.length === 0 ? (
-              <tr><td colSpan={3} style={s.emptyRow}>Report topilmadi</td></tr>
-            ) : filtered.map((r, i) => (
-              <tr key={r.id} style={s.tr}
-                onMouseEnter={e => e.currentTarget.style.background = "#f8fafc"}
-                onMouseLeave={e => e.currentTarget.style.background = "#fff"}>
-                <td style={s.td}>
-                  <span style={s.idBadge}>{i + 1}</span>
-                </td>
-                <td style={s.td}>
-                  <div style={s.reportCell}>
-                    <div style={s.reportIcon}>
-                      <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="#2563eb">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <div style={s.reportName}>{r.name}</div>
-                      {r.description && <div style={s.reportDesc}>{r.description}</div>}
-                    </div>
-                  </div>
-                </td>
-                <td style={{ ...s.td, paddingLeft: 8 }}>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <button onClick={() => handleOpen(r)} style={s.openBtn}>
-                      <svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                      </svg>
-                      Ochish
-                    </button>
-                    <button onClick={() => setScheduleReport(r)} style={s.scheduleBtn}>
-                      <svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <rect x="3" y="4" width="18" height="18" rx="2" strokeWidth="2"/>
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 2v4M8 2v4M3 10h18"/>
-                      </svg>
-                      Schedule
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {loading ? (
+        <div style={s.center}>
+          <div style={s.spinner} />
+          <p style={{ color: "#94a3b8", marginTop: 12, fontSize: 13 }}>Yuklanmoqda...</p>
+        </div>
+      ) : error ? (
+        <div style={s.center}><div style={s.errorBox}>⚠ {error}</div></div>
+      ) : (
+        <>
+          <div style={s.tableWrap}>
+            <table style={s.table}>
+              <colgroup>
+                <col style={{ width: "52px" }} />
+                <col />
+                <col style={{ width: "240px" }} />
+              </colgroup>
+              <thead>
+                <tr style={s.theadRow}>
+                  <th style={s.th}>#</th>
+                  <th style={s.th}>Report nomi</th>
+                  <th style={{ ...s.th, textAlign: "left", paddingLeft: 8 }}>Amal</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reports.length === 0 ? (
+                  <tr><td colSpan={3} style={s.emptyRow}>Report topilmadi</td></tr>
+                ) : reports.map((r, i) => (
+                  <tr key={r.id} style={s.tr}
+                    onMouseEnter={e => e.currentTarget.style.background = "#f8fafc"}
+                    onMouseLeave={e => e.currentTarget.style.background = "#fff"}>
+                    <td style={s.td}>
+                      <span style={s.idBadge}>{page * PAGE_SIZE + i + 1}</span>
+                    </td>
+                    <td style={s.td}>
+                      <div style={s.reportCell}>
+                        <div style={s.reportIcon}>
+                          <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="#2563eb">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                        </div>
+                        <div>
+                          <div style={s.reportName}>{r.name}</div>
+                          {r.description && <div style={s.reportDesc}>{r.description}</div>}
+                        </div>
+                      </div>
+                    </td>
+                    <td style={{ ...s.td, paddingLeft: 8 }}>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button onClick={() => handleOpen(r)} style={s.openBtn}>
+                          <svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                          </svg>
+                          Ochish
+                        </button>
+                        <button onClick={() => setScheduleReport(r)} style={s.scheduleBtn}>
+                          <svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <rect x="3" y="4" width="18" height="18" rx="2" strokeWidth="2"/>
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 2v4M8 2v4M3 10h18"/>
+                          </svg>
+                          Jadval
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-      <div style={s.tableFooter}>
-        Jami: <strong>{filtered.length}</strong> ta report
-        {search && ` (qidiruv: "${search}")`}
-      </div>
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div style={s.pagination}>
+              <span style={s.pageInfo}>
+                {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, totalElements)} / {totalElements} ta
+              </span>
+              <div style={s.pageButtons}>
+                <button onClick={() => goPage(0)} disabled={page === 0}
+                  style={{ ...s.pageBtn, ...(page === 0 ? s.pageBtnDisabled : {}) }}>«</button>
+                <button onClick={() => goPage(page - 1)} disabled={page === 0}
+                  style={{ ...s.pageBtn, ...(page === 0 ? s.pageBtnDisabled : {}) }}>‹</button>
+                {getPageRange()[0] > 0 && <span style={s.ellipsis}>…</span>}
+                {getPageRange().map(p => (
+                  <button key={p} onClick={() => goPage(p)}
+                    style={{ ...s.pageBtn, ...(p === page ? s.pageBtnActive : {}) }}>
+                    {p + 1}
+                  </button>
+                ))}
+                {getPageRange()[getPageRange().length - 1] < totalPages - 1 && <span style={s.ellipsis}>…</span>}
+                <button onClick={() => goPage(page + 1)} disabled={page >= totalPages - 1}
+                  style={{ ...s.pageBtn, ...(page >= totalPages - 1 ? s.pageBtnDisabled : {}) }}>›</button>
+                <button onClick={() => goPage(totalPages - 1)} disabled={page >= totalPages - 1}
+                  style={{ ...s.pageBtn, ...(page >= totalPages - 1 ? s.pageBtnDisabled : {}) }}>»</button>
+              </div>
+            </div>
+          )}
+
+          <div style={s.tableFooter}>
+            Jami: <strong>{totalElements}</strong> ta report
+            {search && ` (qidiruv: "${search}")`}
+          </div>
+        </>
+      )}
     </div>
   );
 };
@@ -644,6 +712,13 @@ const s = {
   scheduleBtn:  { display: "inline-flex", alignItems: "center", gap: 5, border: "1.5px solid #ddd6fe", background: "#faf5ff", color: "#7c3aed", borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" },
   emptyRow:     { textAlign: "center", padding: "32px 0", color: "#94a3b8", fontSize: 13 },
   tableFooter:  { marginTop: 8, fontSize: 12, color: "#94a3b8", textAlign: "right" },
+  pagination:      { display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10, flexWrap: "wrap", gap: 6 },
+  pageInfo:        { fontSize: 12, color: "#64748b" },
+  pageButtons:     { display: "flex", alignItems: "center", gap: 3 },
+  pageBtn:         { minWidth: 28, height: 28, padding: "0 6px", borderRadius: 7, border: "1.5px solid #e2e8f0", background: "#fff", color: "#334155", fontSize: 12, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" },
+  pageBtnActive:   { background: "#2563eb", color: "#fff", border: "1.5px solid #2563eb" },
+  pageBtnDisabled: { opacity: 0.35, cursor: "not-allowed" },
+  ellipsis:        { fontSize: 13, color: "#94a3b8", padding: "0 2px" },
 };
 
 const m = {

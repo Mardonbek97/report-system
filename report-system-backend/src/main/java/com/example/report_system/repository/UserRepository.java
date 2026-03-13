@@ -1,6 +1,8 @@
 package com.example.report_system.repository;
 
 import com.example.report_system.entity.Users;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -25,4 +27,7 @@ public interface UserRepository extends JpaRepository<Users, Long> {
 
     @Query(value = "SELECT COUNT(*) FROM REP_CORE_USERS WHERE ROLE = :role", nativeQuery = true)
     Long countByRole(@Param("role") String username);
+
+    Page<Users> findByUsernameContainingIgnoreCaseOrEmailContainingIgnoreCase(
+            String username, String email, Pageable pageable);
 }
