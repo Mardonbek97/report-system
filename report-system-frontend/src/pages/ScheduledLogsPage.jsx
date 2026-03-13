@@ -86,6 +86,7 @@ const ScheduledLogsPage = () => {
   // Debounced search
   useEffect(() => {
     const t = setTimeout(() => {
+      if (searchInput === "") return;
       setSearch(searchInput);
       fetchData(0, searchInput);
       setPage(0);

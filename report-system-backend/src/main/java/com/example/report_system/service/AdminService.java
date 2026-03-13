@@ -5,6 +5,7 @@ import com.example.report_system.dto.UserAddDto;
 import com.example.report_system.dto.UserDto;
 import com.example.report_system.entity.Users;
 import com.example.report_system.enums.ApplanguageEnum;
+import com.example.report_system.enums.UserRoles;
 import com.example.report_system.enums.UserStatusEnum;
 import com.example.report_system.exception.AppBadException;
 import com.example.report_system.repository.UserRepository;
@@ -68,6 +69,7 @@ public class AdminService {
         user.setEmail(dto.mail());
         user.setPassword(passwordEncoder.encode(dto.password()));
         user.setStatus(UserStatusEnum.ACTIVE);
+        user.setRole(UserRoles.ROLE_USER);
         user.setEnabled(true);
 
         userRepository.save(user);

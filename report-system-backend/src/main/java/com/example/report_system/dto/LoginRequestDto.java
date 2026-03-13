@@ -8,6 +8,6 @@ import org.springframework.validation.annotation.Validated;
 public record LoginRequestDto(@NotBlank(message = "Username must be provided")
                               String username,
                               @NotBlank(message = "Password must be provided")
-                              @Size(min = 7, message = "Password must be at least 7 characters")
+                              @Size(min = 5, message = "Password must be at least 7 characters")
                               String password) {
 }

@@ -28,6 +28,5 @@ public interface UserRepository extends JpaRepository<Users, Long> {
     @Query(value = "SELECT COUNT(*) FROM REP_CORE_USERS WHERE ROLE = :role", nativeQuery = true)
     Long countByRole(@Param("role") String username);
 
-    Page<Users> findByUsernameContainingIgnoreCaseOrEmailContainingIgnoreCase(
-            String username, String email, Pageable pageable);
+
 }

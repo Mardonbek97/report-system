@@ -524,6 +524,7 @@ const GenerateReportPage = () => {
   // Debounced search
   useEffect(() => {
     const t = setTimeout(() => {
+      if (searchInput === "") return;
       setSearch(searchInput);
       fetchReports(0, searchInput);
       setPage(0);
@@ -573,7 +574,8 @@ const GenerateReportPage = () => {
         <input value={searchInput} onChange={e => setSearchInput(e.target.value)}
           placeholder="Report nomi bo'yicha qidirish..." style={s.searchInput} />
         {searchInput && (
-          <button onClick={() => { setSearchInput(""); setSearch(""); fetchReports(0, ""); }}
+          <button onClick={() => {    
+           setSearchInput(""); setSearch(""); fetchReports(0, ""); }}
             style={s.clearBtn}>✕</button>
         )}
       </div>

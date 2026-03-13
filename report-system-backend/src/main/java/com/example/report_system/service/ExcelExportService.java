@@ -22,12 +22,6 @@ public class ExcelExportService {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    /**
-     * Temp tabladan ma'lumot olib Excel ga yozadi
-     *
-     * @param templatePath - shablon fayl yo'li
-     * @return - to'ldirilgan Excel fayl bytes
-     */
     public byte[] generateExcel(String templatePath) throws Exception {
 
         // 1. Temp tabladan ma'lumotlarni olamiz

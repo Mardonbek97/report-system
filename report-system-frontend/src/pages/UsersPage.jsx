@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "../api";
 
-const PAGE_SIZE = 18;
+const PAGE_SIZE = 10;
 
 const UsersPage = () => {
   const [users, setUsers]         = useState([]);
@@ -59,6 +59,7 @@ const UsersPage = () => {
   // Search — 400ms debounce
   useEffect(() => {
     const t = setTimeout(() => {
+       if (searchInput === "") return;
       setSearch(searchInput);
       fetchUsers(0, searchInput);
       setPage(0);
@@ -148,7 +149,7 @@ const UsersPage = () => {
 
   const handleAddUser = async () => {
     if (!addForm.username.trim()) { setAddError("Username kiritilishi shart"); return; }
-    if (!addForm.mail.trim() || !addForm.mail.includes("@")) { setAddError("To'g'ri email kiriting"); return; }
+    if (addForm.mail.trim() && !addForm.mail.includes("@")) { setAddError("To'g'ri email kiriting"); return; }
     if (!addForm.password || addForm.password.length < 7) { setAddError("Parol kamida 7 ta belgidan iborat bo'lishi kerak"); return; }
     setAddLoading(true); setAddError(""); setAddSuccess("");
     try {
@@ -398,7 +399,7 @@ const UsersPage = () => {
             <div style={s.modalBody}>
               {[
                 { label: "Username", key: "username", type: "text",     placeholder: "username kiriting...",  icon: "M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" },
-                { label: "Email",    key: "mail",     type: "email",    placeholder: "email@example.com",    icon: "M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" },
+                { label: "Email (ixtiyoriy)", key: "mail",     type: "email",    placeholder: "email@example.com",    icon: "M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" },
                 { label: "Parol",    key: "password", type: "password", placeholder: "Kamida 7 ta belgi...", icon: "M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" },
               ].map((f, idx) => (
                 <div key={f.key} style={{ marginBottom: idx < 2 ? 16 : 4 }}>

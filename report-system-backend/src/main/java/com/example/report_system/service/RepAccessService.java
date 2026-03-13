@@ -5,7 +5,6 @@ import com.example.report_system.entity.RepAccess;
 import com.example.report_system.entity.Reports;
 import com.example.report_system.entity.Users;
 import com.example.report_system.enums.ApplanguageEnum;
-import com.example.report_system.exception.AppBadException;
 import com.example.report_system.repository.RepAccessRepository;
 import com.example.report_system.repository.ReportRepository;
 import com.example.report_system.repository.UserRepository;
@@ -43,7 +42,7 @@ public class RepAccessService {
                 RepAccess repAccess = new RepAccess();
                 repAccess.setUsers(user);
                 repAccess.setReports(report);
-                System.out.println( " if ichi "+ dto);
+                System.out.println(" if ichi " + dto);
 
                 repAccessRepository.save(repAccess);
             } else {

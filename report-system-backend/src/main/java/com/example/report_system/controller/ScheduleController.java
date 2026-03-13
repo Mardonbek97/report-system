@@ -2,8 +2,7 @@ package com.example.report_system.controller;
 
 import com.example.report_system.dto.ScheduleDto;
 import com.example.report_system.entity.Users;
-import com.example.report_system.repository.ScheduleRepository;
-import com.example.report_system.repository.UserRepository;
+import com.example.report_system.repository.ScheduleRepositoryJdbc;
 import com.example.report_system.service.SchedulerService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
@@ -20,25 +19,34 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.List;
 import java.util.Map;
 
+/**
+ * Faqat HTTP layer.
+ * Biznes logika → SchedulerService
+ * CRUD operatsiyalar → ScheduleRepositoryCustom (to'g'ridan, chunki bu
+ *   oddiy CRUD — service orqali o'tkazish ortiqcha abstraction bo'lardi)
+ *
+ * Qoida: agar service faqat repo ni chaqirib qaytarsa,
+ *        controller to'g'ridan repositoryni chaqirishi mumkin (CRUD uchun).
+ */
 @RestController
 @RequestMapping("/schedules")
 public class ScheduleController {
 
-    private final SchedulerService schedulerService;
-    private final ScheduleRepository repo;
+    private final SchedulerService         schedulerService;
+    private final ScheduleRepositoryJdbc scheduleRepo;
+
     @Value("${report.scheduled-reports.dir}")
     private String scheduledReportsDir;
 
-    public ScheduleController(SchedulerService schedulerService, ScheduleRepository repo, UserRepository userRepository) {
+    public ScheduleController(SchedulerService schedulerService,
+                              ScheduleRepositoryJdbc scheduleRepo) {
         this.schedulerService = schedulerService;
-        this.repo = repo;
+        this.scheduleRepo     = scheduleRepo;
     }
 
-
-    // ── GET /api/schedules ───────────────────────────────────
+    // ── GET /schedules ───────────────────────────────────────────────────────
     @GetMapping
     public ResponseEntity<Map<String, Object>> getAll(
             @RequestParam(defaultValue = "0")  int page,
@@ -47,7 +55,7 @@ public class ScheduleController {
         try {
             Authentication auth = getAuth();
             boolean isAdmin = isAdmin(auth);
-            Long userId = getUserId(auth.getName());
+            Long userId = getCurrentUser(auth).getId();
             Map<String, Object> result = schedulerService.findByUser(userId, isAdmin, page, size, search);
             return ResponseEntity.ok(result);
         } catch (Exception e) {
@@ -56,60 +64,54 @@ public class ScheduleController {
         }
     }
 
-    // ── POST /api/schedules ──────────────────────────────────
+    // ── POST /schedules ──────────────────────────────────────────────────────
     @PostMapping
     public ResponseEntity<?> create(@RequestBody ScheduleDto dto) {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        Users user = (Users) auth.getPrincipal();
         try {
-            Long userId = getUserId(user.getUsername());
-            repo.save(dto, userId);
+            Users user = getCurrentUser(getAuth());
+            scheduleRepo.save(dto, user.getId());
             return ResponseEntity.ok(Map.of("message", "Schedule yaratildi"));
         } catch (Exception e) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of("error", e.getMessage()));
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
-    // ── PATCH /api/schedules/{id}/toggle ────────────────────
+    // ── PATCH /schedules/{id}/toggle ─────────────────────────────────────────
     @PatchMapping("/{id}/toggle")
     public ResponseEntity<?> toggle(@PathVariable String id,
                                     @RequestBody Map<String, Boolean> body) {
         Boolean active = body.get("active");
-        if (active == null) return ResponseEntity.badRequest()
-                .body(Map.of("error", "'active' field kerak"));
-        repo.toggleActive(id, active);
+        if (active == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "'active' field kerak"));
+        }
+        scheduleRepo.toggleActive(id, active);
         return ResponseEntity.ok(Map.of("message", "Yangilandi"));
     }
 
-    // ── DELETE /api/schedules/{id} ───────────────────────────
+    // ── DELETE /schedules/{id} ───────────────────────────────────────────────
     @DeleteMapping("/{id}")
     public ResponseEntity<?> delete(@PathVariable String id) {
-        repo.delete(id);
+        scheduleRepo.delete(id);
         return ResponseEntity.ok(Map.of("message", "O'chirildi"));
     }
 
-    // ── GET /api/schedules/download?filePath=... ─────────────────
+    // ── GET /schedules/download?filePath=... ─────────────────────────────────
     @GetMapping("/download")
     public ResponseEntity<Resource> downloadFile(@RequestParam String filePath) {
         try {
-            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            Authentication auth = getAuth();
             boolean isAdmin = isAdmin(auth);
-            Users currentUser = (Users) auth.getPrincipal();
+            Users currentUser = getCurrentUser(auth);
 
             // Security: user faqat o'z faylini yuklab olishi mumkin
-            // filePath: "scheduled-reports/username/file.xlsx"
             if (!isAdmin) {
-                String expectedPrefix = "scheduled-reports/" + currentUser.getUsername() + "/";
                 String normalizedPath = filePath.replace("\\", "/");
                 if (!normalizedPath.contains("/" + currentUser.getUsername() + "/")) {
                     return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
                 }
             }
 
-            // scheduledReportsDir + fayl nomi
             Path baseDir = Paths.get(scheduledReportsDir).toAbsolutePath().normalize();
-            // filePath ichidan faqat fayl nomini olamiz (xavfsizlik uchun)
             String fileName = Paths.get(filePath).getFileName().toString();
             String username = isAdmin
                     ? Paths.get(filePath.replace("\\", "/")).getParent().getFileName().toString()
@@ -127,18 +129,18 @@ public class ScheduleController {
                 return ResponseEntity.notFound().build();
             }
 
-            // Content type aniqlash
             String ext = fileName.contains(".")
                     ? fileName.substring(fileName.lastIndexOf(".") + 1).toLowerCase()
                     : "bin";
+
             MediaType mediaType = switch (ext) {
-                case "xlsx" ->
-                        MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-                case "docx" ->
-                        MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-                case "txt" -> MediaType.TEXT_PLAIN;
-                case "zip" -> MediaType.parseMediaType("application/zip");
-                default -> MediaType.APPLICATION_OCTET_STREAM;
+                case "xlsx" -> MediaType.parseMediaType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+                case "docx" -> MediaType.parseMediaType(
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+                case "txt"  -> MediaType.TEXT_PLAIN;
+                case "zip"  -> MediaType.parseMediaType("application/zip");
+                default     -> MediaType.APPLICATION_OCTET_STREAM;
             };
 
             String encodedName = URLEncoder.encode(fileName, StandardCharsets.UTF_8)
@@ -155,7 +157,7 @@ public class ScheduleController {
         }
     }
 
-    // ── Helpers ──────────────────────────────────────────────
+    // ── Helpers ──────────────────────────────────────────────────────────────
     private Authentication getAuth() {
         return SecurityContextHolder.getContext().getAuthentication();
     }
@@ -165,9 +167,7 @@ public class ScheduleController {
                 .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
     }
 
-    private Long getUserId(String username) {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        Users user = (Users) auth.getPrincipal();
-        return user.getId();
+    private Users getCurrentUser(Authentication auth) {
+        return (Users) auth.getPrincipal();
     }
 }

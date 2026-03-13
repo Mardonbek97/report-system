@@ -54,6 +54,7 @@ const ReportPages = () => {
   // Debounced search
   useEffect(() => {
     const t = setTimeout(() => {
+      if (searchInput === "") return;
       setSearch(searchInput);
       fetchReports(0, searchInput);
       setPage(0);

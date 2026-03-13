@@ -57,7 +57,12 @@ public class ReportController {
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(defaultValue = "")   String search) {
         try {
-            Map<String, Object> result = reportService.getAllReport(page, size, search);
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            Users user = (Users) auth.getPrincipal();
+            String username = user.getUsername();
+            boolean isAdmin = auth.getAuthorities().stream()
+                    .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+            Map<String, Object> result = reportService.getAllReport(page, size, search, isAdmin, username);
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             e.printStackTrace();
