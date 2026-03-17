@@ -1,99 +1,116 @@
--- Create table
-create global temporary table REP_CORE_TMP
-(
-  rep_id     NUMBER,
-  row_number NUMBER,
-  data       CLOB
-)
-on commit preserve rows;
+-- Create sequence 
+CREATE SEQUENCE SEQ_FOR_VAL
+MINVALUE 1
+MAXVALUE 9999999999999999999999999999
+START WITH 1481
+INCREMENT BY 1
+CACHE 20;
+
+CREATE TABLE DM1.REP_CORE_ACCESS
+   (  REP_ID RAW(16),
+  USER_ID NUMBER,
+  SALARY_ACCESS NUMBER(1,0),
+  CREATED_AT DATE DEFAULT SYSDATE,
+   CONSTRAINT FK_REP_ROLE FOREIGN KEY (REP_ID)
+    REFERENCES DM1.REP_CORE_NAME (ID) ENABLE
+   ) ;
+
+
+CREATE TABLE DM1.REP_CORE_LOG
+   (  ID NUMBER,
+  REP_ID RAW(16),
+  USER_ID NUMBER,
+  BG_TIME DATE,
+  END_TIME DATE,
+  STATUS VARCHAR2(3),
+  PERCENTAGE VARCHAR2(3),
+  ERROR_MSG VARCHAR2(200),
+  APL_DT DATE DEFAULT sysdate,
+   CONSTRAINT FK_LOG_REP FOREIGN KEY (REP_ID)
+    REFERENCES DM1.REP_CORE_NAME (ID) ENABLE
+   ) ;
+
+
+CREATE TABLE DM1.REP_CORE_NAME
+   (  ID RAW(16) DEFAULT SYS_GUID(),
+  NAME VARCHAR2(100),
+  PACKAGE_NAME VARCHAR2(100),
+  STATUS CHAR(1),
+  CREATED_AT DATE DEFAULT SYSDATE,
+  MODIFIED_AT DATE DEFAULT SYSDATE,
+  TEMPLATE VARCHAR2(100),
+   PRIMARY KEY (ID)) ;
+
+
+CREATE TABLE DM1.REP_CORE_PARAMS
+   (  REP_ID RAW(16),
+  PARAM_NAME VARCHAR2(100),
+  PARAM_TYPE VARCHAR2(100),
+  PARAM_ORDER NUMBER,
+  PARAM_VIEW NVARCHAR2(200),
+  DEF_VALUE VARCHAR2(4000),
+   CONSTRAINT FK_REP_PARAMS FOREIGN KEY (REP_ID)
+    REFERENCES DM1.REP_CORE_NAME (ID) ENABLE
+   );
+
 
 -- Create table
-create table REP_CORE_LOG
+create table REP_CORE_SCHEDULE
 (
-  id         NUMBER,
-  rep_id     RAW(16),
-  user_id    NUMBER,
-  bg_time    DATE,
-  end_time   DATE,
-  status     VARCHAR2(3),
-  percentage VARCHAR2(3),
-  error_msg  VARCHAR2(200),
-  apl_dt     DATE default sysdate
+  id          RAW(16) default SYS_GUID() not null,
+  rep_id      RAW(16) not null,
+  user_id     NUMBER not null,
+  params      CLOB,
+  file_format VARCHAR2(10) default 'xlsx',
+  cron_expr   VARCHAR2(100),
+  run_at      TIMESTAMP(6),
+  is_active   NUMBER(1) default 1,
+  last_run    TIMESTAMP(6),
+  last_status VARCHAR2(20),
+  last_error  VARCHAR2(1000),
+  last_file   VARCHAR2(500),
+  created_at  TIMESTAMP(6) default SYSTIMESTAMP,
+  is_deleted  NUMBER default 0
 );
 -- Create/Recreate primary, unique and foreign key constraints 
-alter table REP_CORE_LOG
-  add constraint FK_LOG_REP foreign key (REP_ID)
-  references REP_CORE_NAME (ID);
-
--- Create table
-create table REP_CORE_USERS
-(
-  id          NUMBER,
-  username    VARCHAR2(100) not null,
-  password    VARCHAR2(100) not null,
-  created_at  DATE default SYSDATE,
-  modified_at DATE default SYSDATE,
-  ip_address  VARCHAR2(20),
-  last_login  DATE,
-  status      VARCHAR2(1),
-  email       VARCHAR2(100),
-  role        VARCHAR2(100),
-  is_enabled  NUMBER
-);
-
--- Create table
-create table REP_CORE_ACCESS
-(
-  rep_id        RAW(16),
-  user_id       NUMBER,
-  salary_access NUMBER(1),
-  created_at    DATE default SYSDATE
-);
--- Create/Recreate primary, unique and foreign key constraints 
-alter table REP_CORE_ACCESS
-  add constraint FK_REP_ROLE foreign key (REP_ID)
-  references REP_CORE_NAME (ID);
-
--- Create table
-create table REP_CORE_NAME
-(
-  id           RAW(16) default SYS_GUID() not null,
-  name         VARCHAR2(100),
-  package_name VARCHAR2(100),
-  status       CHAR(1),
-  created_at   DATE default SYSDATE,
-  modified_at  DATE default SYSDATE
-);
--- Create/Recreate primary, unique and foreign key constraints 
-alter table REP_CORE_NAME
+alter table REP_CORE_SCHEDULE
   add primary key (ID);
-  
-  -- Create table
-create table REP_CORE_PARAMS
-(
-  rep_id      RAW(16),
-  param_name  VARCHAR2(100),
-  param_type  VARCHAR2(100),
-  param_order NUMBER
-);
--- Create/Recreate primary, unique and foreign key constraints 
-alter table REP_CORE_PARAMS
-  add constraint FK_REP_PARAMS foreign key (REP_ID)
+alter table REP_CORE_SCHEDULE
+  add constraint FK_SCHED_REP foreign key (REP_ID)
   references REP_CORE_NAME (ID);
+alter table REP_CORE_SCHEDULE
+  add constraint FK_SCHED_USER foreign key (USER_ID)
+  references REP_CORE_USERS (ID);
 
-  -- Create table
-create table REP_CORE_EXCEL_TMP
-(
-  id          RAW(20),
-  rep_id      RAW(20),
-  row_number  NUMBER,
-  import_data CLOB,
-  rep_log_id  NUMBER
-);
--- Create/Recreate primary, unique and foreign key constraints 
-alter table REP_CORE_EXCEL_TMP
-  add constraint FK_CORE_EXCEL_TMP foreign key (REP_ID)
-  references REP_CORE_NAME (ID);
+CREATE TABLE DM1.REP_CORE_USERS
+   (  ID NUMBER,
+  USERNAME VARCHAR2(100) NOT NULL ENABLE,
+  PASSWORD VARCHAR2(100) NOT NULL ENABLE,
+  CREATED_AT DATE DEFAULT SYSDATE,
+  MODIFIED_AT DATE DEFAULT SYSDATE,
+  IP_ADDRESS VARCHAR2(20),
+  LAST_LOGIN DATE,
+  STATUS VARCHAR2(1),
+  EMAIL VARCHAR2(100),
+  ROLE VARCHAR2(100),
+  IS_ENABLED NUMBER,
+   CONSTRAINT PK_CORE_USERS PRIMARY KEY (ID) 
+   ) ;
 
 
+CREATE TABLE DM1.REP_CORE_EXCEL_TMP
+   (  ID RAW(20),
+  REP_ID RAW(20),
+  ROW_NUMBER NUMBER,
+  IMPORT_DATA CLOB,
+  REP_LOG_ID NUMBER,
+   CONSTRAINT FK_CORE_EXCEL_TMP FOREIGN KEY (REP_ID)
+    REFERENCES DM1.REP_CORE_NAME (ID) ENABLE
+   ) ;
 
+
+CREATE GLOBAL TEMPORARY TABLE DM1.REP_CORE_TMP
+   (  REP_ID NUMBER,
+  ROW_NUMBER NUMBER,
+  DATA CLOB
+   ) ON COMMIT PRESERVE ROWS ;

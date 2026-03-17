@@ -7,14 +7,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.sql.DataSource;
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
-import java.io.StringReader;
+import java.io.*;
 import java.math.BigDecimal;
 import java.sql.*;
 import java.util.*;
@@ -24,6 +23,8 @@ public class ExcelUploadService {
 
     private final DataSource dataSource;
     private final ObjectMapper objectMapper;
+    @Value("${report.template.dir}")
+    private String templateDir;
 
     public ExcelUploadService(DataSource dataSource) {
         this.dataSource = dataSource;
@@ -131,21 +132,18 @@ public class ExcelUploadService {
     }
 
     // ── Template yuklash — disk → classpath ───────────────
-    // Disk dan o'qish: har safar yangi fayl, cache yo'q
     private InputStream loadTemplate(String templatePath) throws Exception {
-        // 1. Absolut yo'l bo'lsa — to'g'ridan-to'g'ri diskdan
-        java.io.File absFile = new java.io.File(templatePath);
+        // 1. Absolut yo'l (to'liq yo'l berilgan bo'lsa)
+        File absFile = new File(templatePath);
         if (absFile.isAbsolute() && absFile.exists()) {
-            return new java.io.FileInputStream(absFile);
+            return new FileInputStream(absFile);
         }
-
-        // 2. templates/ papkasidan diskda qidiramiz (jar yonida)
-        java.io.File diskFile = new java.io.File("templates/" + templatePath);
-        if (diskFile.exists()) {
-            return new java.io.FileInputStream(diskFile);
+        // 2. application.properties dan templateDir + templatePath
+        File dirFile = new File(templateDir + templatePath);
+        if (dirFile.exists()) {
+            return new FileInputStream(dirFile);
         }
-
-        // 3. Fallback — classpath (development uchun)
+        // 3. Fallback — classpath (dev uchun)
         return new ClassPathResource("templates/" + templatePath).getInputStream();
     }
 

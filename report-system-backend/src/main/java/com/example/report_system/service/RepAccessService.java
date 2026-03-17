@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @Service
 public class RepAccessService {
@@ -51,5 +52,9 @@ public class RepAccessService {
             }
         }
         return 1;
+    }
+
+    public List<Long> getAssignedUserIds(UUID repId) {
+        return repAccessRepository.findUserIdsByRepId(repId);
     }
 }

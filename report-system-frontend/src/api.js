@@ -33,6 +33,12 @@ export const api = {
 
   download: (path) =>
     fetch(`${BASE}${path}`, { headers: authHeaders() }),
+
+  delete: (path) =>
+    fetch(`${BASE}${path}`, {
+      method: "DELETE",
+      headers: authHeaders(),
+    }),
 };
 
 export default BASE;

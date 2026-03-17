@@ -21,20 +21,11 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Map;
 
-/**
- * Faqat HTTP layer.
- * Biznes logika → SchedulerService
- * CRUD operatsiyalar → ScheduleRepositoryCustom (to'g'ridan, chunki bu
- *   oddiy CRUD — service orqali o'tkazish ortiqcha abstraction bo'lardi)
- *
- * Qoida: agar service faqat repo ni chaqirib qaytarsa,
- *        controller to'g'ridan repositoryni chaqirishi mumkin (CRUD uchun).
- */
 @RestController
 @RequestMapping("/schedules")
 public class ScheduleController {
 
-    private final SchedulerService         schedulerService;
+    private final SchedulerService       schedulerService;
     private final ScheduleRepositoryJdbc scheduleRepo;
 
     @Value("${report.scheduled-reports.dir}")
@@ -84,15 +75,19 @@ public class ScheduleController {
         if (active == null) {
             return ResponseEntity.badRequest().body(Map.of("error", "'active' field kerak"));
         }
-        scheduleRepo.toggleActive(id, active);
+        schedulerService.toggle(id, active);
         return ResponseEntity.ok(Map.of("message", "Yangilandi"));
     }
 
-    // ── DELETE /schedules/{id} ───────────────────────────────────────────────
+    // ── DELETE /schedules/{id} — soft delete (is_deleted = 1) ───────────────
     @DeleteMapping("/{id}")
     public ResponseEntity<?> delete(@PathVariable String id) {
-        scheduleRepo.delete(id);
-        return ResponseEntity.ok(Map.of("message", "O'chirildi"));
+        try {
+            schedulerService.softDelete(id);
+            return ResponseEntity.ok(Map.of("message", "O'chirildi"));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
     }
 
     // ── GET /schedules/download?filePath=... ─────────────────────────────────
@@ -103,7 +98,7 @@ public class ScheduleController {
             boolean isAdmin = isAdmin(auth);
             Users currentUser = getCurrentUser(auth);
 
-            // Security: user faqat o'z faylini yuklab olishi mumkin
+            // User faqat o'z faylini yuklab olishi mumkin
             if (!isAdmin) {
                 String normalizedPath = filePath.replace("\\", "/");
                 if (!normalizedPath.contains("/" + currentUser.getUsername() + "/")) {
@@ -111,7 +106,7 @@ public class ScheduleController {
                 }
             }
 
-            Path baseDir = Paths.get(scheduledReportsDir).toAbsolutePath().normalize();
+            Path baseDir  = Paths.get(scheduledReportsDir).toAbsolutePath().normalize();
             String fileName = Paths.get(filePath).getFileName().toString();
             String username = isAdmin
                     ? Paths.get(filePath.replace("\\", "/")).getParent().getFileName().toString()

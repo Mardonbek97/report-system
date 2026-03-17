@@ -26,6 +26,12 @@ const ReportPages = () => {
   const [saveError, setSaveError]     = useState("");
   const [saveSuccess, setSaveSuccess] = useState("");
 
+  // Modal pagination
+  const [modalPage, setModalPage]           = useState(0);
+  const [modalTotalPages, setModalTotalPages] = useState(1);
+  const [modalTotal, setModalTotal]         = useState(0);
+  const MODAL_PAGE_SIZE = 10;
+
   const fetchReports = useCallback(async (pg = 0, q = "") => {
     setLoading(true); setError("");
     try {
@@ -54,7 +60,7 @@ const ReportPages = () => {
   // Debounced search
   useEffect(() => {
     const t = setTimeout(() => {
-      if (searchInput === "") return;
+       if (searchInput === "") return;
       setSearch(searchInput);
       fetchReports(0, searchInput);
       setPage(0);
@@ -72,16 +78,35 @@ const ReportPages = () => {
   };
 
   // Modal — userslist ham paginated, lekin modal uchun hammani yuklaymiz (size=1000)
-  const openReportModal = async (report) => {
-    setSelectedReport(report); setSelectedIds(new Set()); setUserSearch("");
-    setSaveError(""); setSaveSuccess(""); setUsersLoading(true); setUsersError("");
+  const fetchModalUsers = async (report, pg = 0, q = "", loadAssigned = false) => {
+    setUsersLoading(true); setUsersError("");
     try {
-      const res = await api.get("/api/admin/userslist?page=0&size=1000&search=");
-      if (!res.ok) throw new Error("Foydalanuvchilarni yuklashda xatolik");
-      const data = await res.json();
-      setUsers(Array.isArray(data) ? data : (data.content ?? []));
+      const usersRes = await api.get(
+        `/api/admin/userslist?page=${pg}&size=10&search=${encodeURIComponent(q)}`
+      );
+      if (!usersRes.ok) throw new Error("Foydalanuvchilarni yuklashda xatolik");
+      const usersData = await usersRes.json();
+      setUsers(Array.isArray(usersData) ? usersData : (usersData.content ?? []));
+      setModalPage(usersData.number ?? 0);
+      setModalTotalPages(usersData.totalPages ?? 1);
+      setModalTotal(usersData.totalElements ?? 0);
+
+      // Assigned faqat modal birinchi ochilganda bir marta yuklanadi
+      if (loadAssigned) {
+        const assignedRes = await api.get(`/api/admin/assigned?repId=${report.id}`);
+        if (assignedRes.ok) {
+          const assignedIds = await assignedRes.json();
+          setSelectedIds(new Set(assignedIds));
+        }
+      }
     } catch (err) { setUsersError(err.message); }
     finally { setUsersLoading(false); }
+  };
+
+  const openReportModal = async (report) => {
+    setSelectedReport(report); setSelectedIds(new Set()); setUserSearch("");
+    setSaveError(""); setSaveSuccess(""); setModalPage(0);
+    await fetchModalUsers(report, 0, "", true); // loadAssigned = true
   };
 
   const closeReportModal = () => {
@@ -95,10 +120,17 @@ const ReportPages = () => {
     setSaveError(""); setSaveSuccess("");
   };
 
-  const filteredUsers = users.filter(
-    u => u.username?.toLowerCase().includes(userSearch.toLowerCase()) ||
-         u.email?.toLowerCase().includes(userSearch.toLowerCase())
-  );
+  // Server-side search with debounce
+  useEffect(() => {
+    if (!selectedReport) return;
+    const t = setTimeout(() => {
+      fetchModalUsers(selectedReport, 0, userSearch, false);
+      setModalPage(0);
+    }, 350);
+    return () => clearTimeout(t);
+  }, [userSearch]);
+
+  const filteredUsers = users; // server-side filtering
 
   const allVisible = filteredUsers.length > 0 && filteredUsers.every(u => selectedIds.has(u.id));
 
@@ -240,7 +272,7 @@ const ReportPages = () => {
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={s.modalTitle}>{selectedReport.name}</div>
-                <div style={s.modalSub}>Foydalanuvchilarni tanlang</div>
+                <div style={s.modalSub}>Foydalanuvchilarni tanlang · <span style={{ color: "#2563eb", fontWeight: 600 }}>{selectedIds.size} ta biriktirilgan</span></div>
               </div>
               <button style={s.modalClose} onClick={closeReportModal}>✕</button>
             </div>
@@ -292,6 +324,26 @@ const ReportPages = () => {
               })}
             </div>
 
+            {/* Modal pagination */}
+            {modalTotalPages > 1 && (
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"8px 14px", borderTop:"1px solid #f1f5f9", background:"#f8fafc", flexShrink:0 }}>
+                <span style={{ fontSize:11, color:"#64748b" }}>{modalPage * 10 + 1}–{Math.min((modalPage + 1) * 10, modalTotal)} / {modalTotal} ta</span>
+                <div style={{ display:"flex", gap:3 }}>
+                  <button onClick={() => fetchModalUsers(selectedReport, modalPage - 1, userSearch)} disabled={modalPage === 0}
+                    style={{ ...s.pageBtn, ...(modalPage === 0 ? s.pageBtnDisabled : {}) }}>‹</button>
+                  {Array.from({ length: modalTotalPages }, (_, i) => i)
+                    .filter(i => Math.abs(i - modalPage) <= 2)
+                    .map(i => (
+                      <button key={i} onClick={() => fetchModalUsers(selectedReport, i, userSearch)}
+                        style={{ ...s.pageBtn, ...(i === modalPage ? s.pageBtnActive : {}) }}>
+                        {i + 1}
+                      </button>
+                    ))}
+                  <button onClick={() => fetchModalUsers(selectedReport, modalPage + 1, userSearch)} disabled={modalPage >= modalTotalPages - 1}
+                    style={{ ...s.pageBtn, ...(modalPage >= modalTotalPages - 1 ? s.pageBtnDisabled : {}) }}>›</button>
+                </div>
+              </div>
+            )}
             <div style={s.modalFooter}>
               {saveError   && <div style={{ ...s.modalError,   flex: 1, marginTop: 0 }}>⚠ {saveError}</div>}
               {saveSuccess && <div style={{ ...s.modalSuccess, flex: 1, marginTop: 0 }}>✓ {saveSuccess}</div>}

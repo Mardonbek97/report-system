@@ -22,8 +22,8 @@ public class ScheduleRepositoryJdbc {
     public void save(ScheduleDto dto, Long userId) {
         String sql =
                 "INSERT INTO rep_core_schedule " +
-                "  (id, rep_id, user_id, params, file_format, cron_expr, run_at, is_active) " +
-                "VALUES (SYS_GUID(), HEXTORAW(?), ?, ?, ?, ?, ?, 1)";
+                        "  (id, rep_id, user_id, params, file_format, cron_expr, run_at, is_active, is_deleted) " +
+                        "VALUES (SYS_GUID(), HEXTORAW(?), ?, ?, ?, ?, ?, 1, 0)";
 
         execute(sql,
                 dto.getRepId().replace("-", "").toUpperCase(),
@@ -46,7 +46,15 @@ public class ScheduleRepositoryJdbc {
         );
     }
 
-    // ── DELETE ───────────────────────────────────────────────────────────────
+    // ── Soft delete (is_deleted = 1) ─────────────────────────────────────────
+    public void softDelete(String scheduleId) {
+        execute(
+                "UPDATE rep_core_schedule SET is_deleted = 1, is_active = 0 WHERE id = HEXTORAW(?)",
+                toHex(scheduleId)
+        );
+    }
+
+    // ── Hard delete (kerak bo'lsa) ────────────────────────────────────────────
     public void delete(String scheduleId) {
         execute(
                 "DELETE FROM rep_core_schedule WHERE id = HEXTORAW(?)",
@@ -58,14 +66,14 @@ public class ScheduleRepositoryJdbc {
     public void updateResult(String scheduleId, String status, String error, String filePath) {
         execute(
                 "UPDATE rep_core_schedule " +
-                "SET last_run = SYSTIMESTAMP, last_status = ?, last_error = ?, last_file = ? " +
-                "WHERE id = HEXTORAW(?)",
+                        "SET last_run = SYSTIMESTAMP, last_status = ?, last_error = ?, last_file = ? " +
+                        "WHERE id = HEXTORAW(?)",
                 status, error, filePath,
                 toHex(scheduleId)
         );
     }
 
-    // ── Pagination bilan ro'yxat ─────────────────────────────────────────────
+    // ── Pagination bilan ro'yxat (is_deleted = 0 lar) ───────────────────────
     public List<ScheduleDto> findAllPaged(Long userId, boolean isAdmin,
                                           int offset, int rownumMax,
                                           String like, boolean hasSearch) {
@@ -74,20 +82,22 @@ public class ScheduleRepositoryJdbc {
 
         String innerSql =
                 "SELECT s.id, s.rep_id, n.name AS rep_name, " +
-                "       s.user_id, u.username, s.params, s.file_format, " +
-                "       s.cron_expr, s.run_at, s.is_active, " +
-                "       s.last_run, s.last_status, s.last_error, s.last_file " +
-                "FROM rep_core_schedule s " +
-                "JOIN rep_core_name n  ON n.id = s.rep_id " +
-                "JOIN rep_core_users u ON u.id = s.user_id " +
-                "WHERE 1=1 " + userWhere + searchWhere +
-                "ORDER BY s.created_at DESC";
+                        "       s.user_id, u.username, s.params, s.file_format, " +
+                        "       s.cron_expr, s.run_at, s.is_active, s.is_deleted, " +
+                        "       s.last_run, s.last_status, s.last_error, s.last_file " +
+                        "FROM rep_core_schedule s " +
+                        "JOIN rep_core_name n  ON n.id = s.rep_id " +
+                        "JOIN rep_core_users u ON u.id = s.user_id " +
+                        "WHERE 1=1 " +
+                        (isAdmin ? "" : "AND (s.is_deleted IS NULL OR s.is_deleted = 0) ") +
+                        userWhere + searchWhere +
+                        "ORDER BY s.created_at DESC";
 
         String sql =
                 "SELECT * FROM (" +
-                "  SELECT t.*, ROWNUM rn FROM (" + innerSql + ") t" +
-                "  WHERE ROWNUM <= ?" +
-                ") WHERE rn > ?";
+                        "  SELECT t.*, ROWNUM rn FROM (" + innerSql + ") t" +
+                        "  WHERE ROWNUM <= ?" +
+                        ") WHERE rn > ?";
 
         List<Object> params = buildParams(userId, isAdmin, like, hasSearch);
         params.add(rownumMax);
@@ -96,45 +106,49 @@ public class ScheduleRepositoryJdbc {
         return query(sql, params, (rs, i) -> mapFull(rs));
     }
 
-    // ── Pagination uchun count ───────────────────────────────────────────────
+    // ── Pagination uchun count (is_deleted = 0 lar) ──────────────────────────
     public int countAll(Long userId, boolean isAdmin, String like, boolean hasSearch) {
         String userWhere   = isAdmin ? "" : "AND s.user_id = ? ";
         String searchWhere = hasSearch ? "AND (LOWER(n.name) LIKE ? OR LOWER(u.username) LIKE ?) " : "";
 
         String countSql =
                 "SELECT COUNT(*) FROM rep_core_schedule s " +
-                "JOIN rep_core_name n  ON n.id = s.rep_id " +
-                "JOIN rep_core_users u ON u.id = s.user_id " +
-                "WHERE 1=1 " + userWhere + searchWhere;
+                        "JOIN rep_core_name n  ON n.id = s.rep_id " +
+                        "JOIN rep_core_users u ON u.id = s.user_id " +
+                        "WHERE 1=1 " +
+                        (isAdmin ? "" : "AND (s.is_deleted IS NULL OR s.is_deleted = 0) ") +
+                        userWhere + searchWhere;
 
         List<Object> params = buildParams(userId, isAdmin, like, hasSearch);
-
         return queryForInt(countSql, params);
     }
 
-    // ── One-time: vaqti kelgan, hali ishlamagan ──────────────────────────────
+    // ── One-time: vaqti kelgan, hali ishlamagan (is_deleted = 0) ────────────
     public List<ScheduleDto> findDueOnetime() {
         String sql =
                 "SELECT s.id, s.rep_id, s.user_id, u.username, " +
-                "       s.params, s.file_format, s.cron_expr, s.run_at " +
-                "FROM rep_core_schedule s " +
-                "JOIN rep_core_users u ON u.id = s.user_id " +
-                "WHERE s.is_active = 1 " +
-                "  AND s.cron_expr IS NULL " +
-                "  AND s.run_at <= SYSTIMESTAMP " +
-                "  AND (s.last_run IS NULL OR s.last_run < s.run_at)";
+                        "       s.params, s.file_format, s.cron_expr, s.run_at " +
+                        "FROM rep_core_schedule s " +
+                        "JOIN rep_core_users u ON u.id = s.user_id " +
+                        "WHERE s.is_active = 1 " +
+                        "  AND (s.is_deleted IS NULL OR s.is_deleted = 0) " +
+                        "  AND s.cron_expr IS NULL " +
+                        "  AND s.run_at <= SYSTIMESTAMP " +
+                        "  AND (s.last_run IS NULL OR s.last_run < s.run_at)";
 
         return query(sql, List.of(), (rs, i) -> mapMinimal(rs));
     }
 
-    // ── Cron: barcha active schedulelar ─────────────────────────────────────
+    // ── Cron: barcha active schedulelar (is_deleted = 0) ────────────────────
     public List<ScheduleDto> findActiveCron() {
         String sql =
                 "SELECT s.id, s.rep_id, s.user_id, u.username, " +
-                "       s.params, s.file_format, s.cron_expr, s.run_at " +
-                "FROM rep_core_schedule s " +
-                "JOIN rep_core_users u ON u.id = s.user_id " +
-                "WHERE s.is_active = 1 AND s.cron_expr IS NOT NULL";
+                        "       s.params, s.file_format, s.cron_expr, s.run_at " +
+                        "FROM rep_core_schedule s " +
+                        "JOIN rep_core_users u ON u.id = s.user_id " +
+                        "WHERE s.is_active = 1 " +
+                        "  AND (s.is_deleted IS NULL OR s.is_deleted = 0) " +
+                        "  AND s.cron_expr IS NOT NULL";
 
         return query(sql, List.of(), (rs, i) -> mapMinimal(rs));
     }
@@ -145,6 +159,7 @@ public class ScheduleRepositoryJdbc {
         ScheduleDto d = mapMinimal(rs);
         d.setRepName(rs.getString("rep_name"));
         d.setActive(rs.getInt("is_active") == 1);
+        d.setDeleted(rs.getObject("is_deleted") != null && rs.getInt("is_deleted") == 1);
         Timestamp lastRun = rs.getTimestamp("last_run");
         if (lastRun != null) d.setLastRun(lastRun.toLocalDateTime().toString());
         d.setLastStatus(rs.getString("last_status"));
@@ -169,7 +184,6 @@ public class ScheduleRepositoryJdbc {
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    /** WHERE clause params listini dinamik quradi */
     private List<Object> buildParams(Long userId, boolean isAdmin, String like, boolean hasSearch) {
         List<Object> params = new ArrayList<>();
         if (!isAdmin)  params.add(userId);
@@ -177,7 +191,6 @@ public class ScheduleRepositoryJdbc {
         return params;
     }
 
-    /** JdbcTemplate o'rniga to'g'ridan Connection ishlatiladi (type safety) */
     private void execute(String sql, Object... args) {
         try (Connection conn = dataSource.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {

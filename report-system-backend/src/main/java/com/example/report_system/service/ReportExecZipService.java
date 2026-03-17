@@ -12,6 +12,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.poi.xwpf.usermodel.*;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -51,16 +52,19 @@ public class ReportExecZipService {
     private static final int MAX_ROWS_PER_FILE = 2_000;
 
     // ── Template yuklash — disk → classpath ───────────────
+    @Value("${report.template.dir}")
+    private String templateDir;
+
     private InputStream loadTemplate(String templatePath) throws Exception {
-        // 1. Absolut yo'l
+        // 1. Absolut yo'l (to'liq yo'l berilgan bo'lsa)
         File absFile = new File(templatePath);
         if (absFile.isAbsolute() && absFile.exists()) {
             return new FileInputStream(absFile);
         }
-        // 2. Jar yonidagi templates/ papka
-        File diskFile = new File("templates/" + templatePath);
-        if (diskFile.exists()) {
-            return new FileInputStream(diskFile);
+        // 2. application.properties dan templateDir + templatePath
+        File dirFile = new File(templateDir + templatePath);
+        if (dirFile.exists()) {
+            return new FileInputStream(dirFile);
         }
         // 3. Fallback — classpath (dev uchun)
         return new ClassPathResource("templates/" + templatePath).getInputStream();

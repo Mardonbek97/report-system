@@ -1,6 +1,8 @@
 package com.example.report_system.controller;
 
-import com.example.report_system.dto.*;
+import com.example.report_system.dto.ExecuteReportRequestDto;
+import com.example.report_system.dto.ReportExecLogDto;
+import com.example.report_system.dto.ReportParamsExecDto;
 import com.example.report_system.entity.Users;
 import com.example.report_system.enums.ApplanguageEnum;
 import com.example.report_system.service.ExcelExportService;
@@ -11,13 +13,11 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
@@ -26,7 +26,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -53,9 +52,9 @@ public class ReportController {
 
     @GetMapping("")
     public ResponseEntity<Map<String, Object>> getAll(
-            @RequestParam(defaultValue = "0")  int page,
+            @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
-            @RequestParam(defaultValue = "")   String search) {
+            @RequestParam(defaultValue = "") String search) {
         try {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             Users user = (Users) auth.getPrincipal();
@@ -83,7 +82,7 @@ public class ReportController {
 
         ReportExecZipService.ExportResult result = reportExecZipService.executeAndExportZip(request);
 
-        String ext      = result.extension();
+        String ext = result.extension();
         String fileName = "report_" + System.currentTimeMillis() + "." + ext;
         String filePath = allowedExportDir + fileName;
 
@@ -122,10 +121,12 @@ public class ReportController {
 
         // 4. Content type
         MediaType contentType;
-        if      (filePathStr.endsWith(".zip"))  contentType = MediaType.parseMediaType("application/zip");
-        else if (filePathStr.endsWith(".docx")) contentType = MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-        else if (filePathStr.endsWith(".txt"))  contentType = MediaType.TEXT_PLAIN;
-        else                                    contentType = MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        if (filePathStr.endsWith(".zip")) contentType = MediaType.parseMediaType("application/zip");
+        else if (filePathStr.endsWith(".docx"))
+            contentType = MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+        else if (filePathStr.endsWith(".txt")) contentType = MediaType.TEXT_PLAIN;
+        else
+            contentType = MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION,
@@ -137,7 +138,7 @@ public class ReportController {
     @GetMapping("/report/logs")
     public ResponseEntity<Map<String, Object>> getReportLogs(
             @RequestParam String username,
-            @RequestParam(defaultValue = "0")  int page,
+            @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "15") int size) {
 
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
@@ -147,11 +148,11 @@ public class ReportController {
         Page<ReportExecLogDto> pageResult = reportService.fetchTempData(username, isAdmin, page, size);
 
         Map<String, Object> response = Map.of(
-                "content",       pageResult.getContent(),
-                "totalPages",    pageResult.getTotalPages(),
+                "content", pageResult.getContent(),
+                "totalPages", pageResult.getTotalPages(),
                 "totalElements", pageResult.getTotalElements(),
-                "number",        pageResult.getNumber(),
-                "size",          pageResult.getSize()
+                "number", pageResult.getNumber(),
+                "size", pageResult.getSize()
         );
 
         return ResponseEntity.ok(response);

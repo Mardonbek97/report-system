@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "../api";
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 18;
 
 const UsersPage = () => {
   const [users, setUsers]         = useState([]);

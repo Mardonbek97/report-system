@@ -23,8 +23,8 @@ import java.util.UUID;
 public class SchedulerService {
 
     private final ScheduleRepositoryJdbc scheduleRepositoryJdbc;
-    private final ReportExecZipService     execService;
-    private final ObjectMapper             objectMapper;
+    private final ReportExecZipService   execService;
+    private final ObjectMapper           objectMapper;
 
     @Value("${report.scheduled-reports.dir}")
     private String scheduledReportsDir;
@@ -33,8 +33,8 @@ public class SchedulerService {
                             ReportExecZipService execService,
                             ObjectMapper objectMapper) {
         this.scheduleRepositoryJdbc = scheduleRepositoryJdbc;
-        this.execService   = execService;
-        this.objectMapper  = objectMapper;
+        this.execService            = execService;
+        this.objectMapper           = objectMapper;
     }
 
     // ── Har daqiqa tekshiradi ────────────────────────────────────────────────
@@ -43,7 +43,7 @@ public class SchedulerService {
         // 1. One-time — vaqti kelganlar
         for (ScheduleDto s : scheduleRepositoryJdbc.findDueOnetime()) {
             execute(s);
-            scheduleRepositoryJdbc.toggleActive(s.getId(), false); // bir marta ishlagach o'chir
+            scheduleRepositoryJdbc.toggleActive(s.getId(), false);
         }
 
         // 2. Cron — hozir ishlashi kerakmi tekshir
@@ -56,14 +56,16 @@ public class SchedulerService {
     }
 
     // ── Pagination bilan ro'yxat ─────────────────────────────────────────────
-    public Map<String, Object> findByUser(Long userId, boolean isAdmin, int page, int size, String search) {
+    public Map<String, Object> findByUser(Long userId, boolean isAdmin,
+                                          int page, int size, String search) {
         int offset    = page * size;
         int rownumMax = offset + size;
         boolean hasSearch = search != null && !search.trim().isEmpty();
         String like = "%" + (hasSearch ? search.trim().toLowerCase() : "") + "%";
 
         int total = scheduleRepositoryJdbc.countAll(userId, isAdmin, like, hasSearch);
-        List<ScheduleDto> content = scheduleRepositoryJdbc.findAllPaged(userId, isAdmin, offset, rownumMax, like, hasSearch);
+        List<ScheduleDto> content = scheduleRepositoryJdbc.findAllPaged(
+                userId, isAdmin, offset, rownumMax, like, hasSearch);
         int totalPages = size > 0 ? (int) Math.ceil((double) total / size) : 1;
 
         Map<String, Object> result = new LinkedHashMap<>();
@@ -75,9 +77,17 @@ public class SchedulerService {
         return result;
     }
 
+    // ── Soft delete: is_deleted = 1, is_active = 0 ──────────────────────────
+    public void softDelete(String scheduleId) {
+        scheduleRepositoryJdbc.softDelete(scheduleId);
+    }
+
+    // ── Toggle: is_active ni o'zgartirish ───────────────────────────────────
+    public void toggle(String scheduleId, boolean active) {
+        scheduleRepositoryJdbc.toggleActive(scheduleId, active);
+    }
+
     // ── Schedule ni bajarish ─────────────────────────────────────────────────
-    // Bu metod ReportExecZipService ni chaqiradi — u o'z ichida GTT bilan ishlaydi.
-    // GTT ReportExecZipService da alohida connection ichida — xavfsiz.
     private void execute(ScheduleDto s) {
         try {
             Map<String, String> paramsMap = objectMapper.readValue(
@@ -94,14 +104,13 @@ public class SchedulerService {
 
             ReportExecZipService.ExportResult result = execService.executeAndExportZip(request);
 
-            // Faylni serverga saqlaymiz
             Path dir = Paths.get(scheduledReportsDir, s.getUsername());
             Files.createDirectories(dir);
 
             String timestamp = LocalDateTime.now()
                     .toString().replace(":", "-").replace(".", "-");
-            String fileName = s.getRepId() + "_" + timestamp + "." + result.extension();
-            Path filePath = dir.resolve(fileName);
+            String fileName  = s.getRepId() + "_" + timestamp + "." + result.extension();
+            Path filePath    = dir.resolve(fileName);
             Files.write(filePath, result.bytes());
 
             scheduleRepositoryJdbc.updateResult(s.getId(), "SUCCESS", null, filePath.toString());

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "../api";
 
-const PAGE_SIZE = 18;
+const PAGE_SIZE = 10;
 
 const STATUS_COLORS = {
   SUCCESS: { color: "#16a34a", bg: "#f0fdf4", border: "#bbf7d0", label: "Success" },
@@ -53,6 +53,12 @@ const ScheduledLogsPage = () => {
   const [downloading, setDownloading]   = useState({});
   const [downloadErrors, setDownloadErrors] = useState({});
 
+  // Actions menu
+  const [menuOpenId, setMenuOpenId]     = useState(null);
+  const [confirmModal, setConfirmModal] = useState(null); // { type: "toggle"|"delete", schedule }
+  const [actionLoading, setActionLoading] = useState(false);
+  const [actionError, setActionError]   = useState("");
+
   // Pagination
   const [page, setPage]                 = useState(0);
   const [totalPages, setTotalPages]     = useState(0);
@@ -83,10 +89,45 @@ const ScheduledLogsPage = () => {
 
   useEffect(() => { fetchData(0, ""); }, []);
 
+  // Close menu on outside click
+  useEffect(() => {
+    const handler = () => setMenuOpenId(null);
+    document.addEventListener("click", handler);
+    return () => document.removeEventListener("click", handler);
+  }, []);
+
+  const handleToggle = async (sc) => {
+    setActionLoading(true); setActionError("");
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${import.meta.env.VITE_API_BASE || "http://localhost:8080"}/api/schedules/${sc.id}/toggle`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ active: !sc.active }),
+      });
+      if (!res.ok) throw new Error("Xatolik yuz berdi");
+      setSchedules(prev => prev.map(s => s.id === sc.id ? { ...s, active: !sc.active } : s));
+      setConfirmModal(null);
+    } catch (e) { setActionError(e.message); }
+    finally { setActionLoading(false); }
+  };
+
+  const handleDelete = async (sc) => {
+    setActionLoading(true); setActionError("");
+    try {
+      const res = await api.delete(`/api/schedules/${sc.id}`);
+      if (!res.ok) throw new Error("Xatolik yuz berdi");
+      setSchedules(prev => prev.filter(s => s.id !== sc.id));
+      setTotalElements(prev => prev - 1);
+      setConfirmModal(null);
+    } catch (e) { setActionError(e.message); }
+    finally { setActionLoading(false); }
+  };
+
   // Debounced search
   useEffect(() => {
     const t = setTimeout(() => {
-      if (searchInput === "") return;
+       if (searchInput === "") return;
       setSearch(searchInput);
       fetchData(0, searchInput);
       setPage(0);
@@ -136,12 +177,13 @@ const ScheduledLogsPage = () => {
   const statusLabels = { ALL: "Barchasi", SUCCESS: "Success", ERROR: "Xatolik", PENDING: "Kutilmoqda", PAUSED: "To'xtatilgan" };
 
   return (
-    <div style={s.wrapper}>
+    <>
       <style>{`
         @keyframes spin { to { transform: rotate(360deg) } }
         @keyframes fadeIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
         tr.slog-row:hover td { background: #f8fafc !important; }
       `}</style>
+      <div style={s.wrapper}>
 
       {/* Header */}
       <div style={s.header}>
@@ -214,7 +256,7 @@ const ScheduledLogsPage = () => {
             <table style={s.table}>
               <thead>
                 <tr style={s.thead}>
-                  {["#", "Report", ...(isAdmin ? ["Foydalanuvchi"] : []), "Jadval", "Oxirgi run", "Holat", "Format", "Fayl", ""].map(h => (
+                  {["#", "Report", ...(isAdmin ? ["Foydalanuvchi"] : []), "Jadval", "Oxirgi run", "Holat", "Format", "Fayl", "Xato", "", "", ...(isAdmin ? ["Status"] : [])].map(h => (
                     <th key={h} style={s.th}>{h}</th>
                   ))}
                 </tr>
@@ -229,7 +271,7 @@ const ScheduledLogsPage = () => {
                   return (
                     <>
                       <tr key={sc.id} className="slog-row"
-                        style={{ ...s.tr, animation: `fadeIn 0.2s ease ${i * 0.02}s both` }}>
+                        style={{ ...s.tr, animation: `fadeIn 0.2s ease ${i * 0.02}s both`, ...(sc.deleted ? { opacity: 0.45, background: "#f8fafc" } : {}) }}>
                         <td style={{ ...s.td, color: "#94a3b8" }}>{page * PAGE_SIZE + i + 1}</td>
                         <td style={s.td}>
                           <div style={{ fontWeight: 600, color: "#0f172a", fontSize: 13 }}>{sc.repName}</div>
@@ -291,11 +333,51 @@ const ScheduledLogsPage = () => {
                             </button>
                           )}
                         </td>
+                        {/* ── Toggle td ── */}
+                        <td style={{ ...s.td, whiteSpace: "nowrap" }}>
+                          {(!!sc.cronExpr || sc.active) && (
+                            <button
+                              onClick={() => { setActionError(""); setConfirmModal({ type: "toggle", schedule: sc }); }}
+                              style={sc.active ? s.pauseBtn : s.playBtn}>
+                              {sc.active
+                                ? <><svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg> To’xtatish</>
+                                : <><svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><polygon points="5,3 19,12 5,21"/></svg> Yoqish</>}
+                            </button>
+                          )}
+                        </td>
+                        {/* ── Delete td ── */}
+                        <td style={{ ...s.td, whiteSpace: "nowrap" }}>
+                          {!!sc.cronExpr && (
+                            <button
+                              onClick={() => { setActionError(""); setConfirmModal({ type: "delete", schedule: sc }); }}
+                              style={s.deleteBtn}>
+                              <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>
+                              </svg>
+                              O’chirish
+                            </button>
+                          )}
+                        </td>
+                        {/* ── Deleted status td (admin only) ── */}
+                        {isAdmin && (
+                          <td style={{ ...s.td, whiteSpace: "nowrap" }}>
+                            {sc.deleted
+                              ? <span style={{ display:"inline-flex", alignItems:"center", gap:5, padding:"3px 10px", borderRadius:99, fontSize:11, fontWeight:600, background:"#fef2f2", color:"#dc2626", border:"1px solid #fecaca" }}>
+                                  <svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+                                  O’chirilgan
+                                </span>
+                              : <span style={{ display:"inline-flex", alignItems:"center", gap:5, padding:"3px 10px", borderRadius:99, fontSize:11, fontWeight:600, background:"#f0fdf4", color:"#16a34a", border:"1px solid #bbf7d0" }}>
+                                  <svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>
+                                  Aktiv
+                                </span>
+                            }
+                          </td>
+                        )}
                       </tr>
 
                       {expandedId === sc.id && sc.lastError && (
                         <tr key={sc.id + "-err"}>
-                          <td colSpan={isAdmin ? 9 : 8} style={{ padding: 0, background: "#fef2f2" }}>
+                          <td colSpan={isAdmin ? 12 : 10} style={{ padding: 0, background: "#fef2f2" }}>
                             <div style={{ padding: "10px 16px", borderTop: "1px solid #fecaca" }}>
                               <strong style={{ fontSize: 12, color: "#dc2626" }}>Xatolik xabari:</strong>
                               <pre style={{ margin: "5px 0 0", fontSize: 12, color: "#dc2626", whiteSpace: "pre-wrap", wordBreak: "break-all", background: "#fff", border: "1px solid #fecaca", borderRadius: 6, padding: 10 }}>
@@ -341,6 +423,81 @@ const ScheduledLogsPage = () => {
         </>
       )}
     </div>
+
+      {/* ── Confirm Modal ── */}
+      {confirmModal && (
+        <div style={s.overlay} onClick={() => !actionLoading && setConfirmModal(null)}>
+          <div style={s.modal} onClick={e => e.stopPropagation()}>
+            <div style={s.modalHeader}>
+              <div style={{
+                width: 44, height: 44, borderRadius: "50%", flexShrink: 0, display: "flex",
+                alignItems: "center", justifyContent: "center",
+                background: confirmModal.type === "delete" ? "#fef2f2" : confirmModal.schedule.active ? "#fffbeb" : "#f0fdf4",
+              }}>
+                {confirmModal.type === "delete"
+                  ? <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="#dc2626" strokeWidth="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+                  : confirmModal.schedule.active
+                    ? <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="#d97706" strokeWidth="2"><path d="M10 9v6m4-6v6"/><circle cx="12" cy="12" r="9"/></svg>
+                    : <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="#16a34a" strokeWidth="2"><path d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><circle cx="12" cy="12" r="9"/></svg>}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "#0f172a" }}>
+                  {confirmModal.type === "delete"
+                    ? "Scheduleni o'chirish"
+                    : confirmModal.schedule.active ? "Scheduleni to'xtatish" : "Scheduleni yoqish"}
+                </div>
+                <div style={{ fontSize: 13, color: "#94a3b8", marginTop: 2 }}>
+                  {confirmModal.schedule.repName}
+                </div>
+              </div>
+              <button onClick={() => setConfirmModal(null)} disabled={actionLoading}
+                style={{ border: "none", background: "#f1f5f9", borderRadius: 8, width: 30, height: 30, cursor: "pointer", fontSize: 14, color: "#64748b", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                ✕
+              </button>
+            </div>
+
+            <div style={{ padding: "16px 24px" }}>
+              <p style={{ margin: 0, fontSize: 14, color: "#475569", lineHeight: 1.6 }}>
+                {confirmModal.type === "delete"
+                  ? <><strong>{confirmModal.schedule.repName}</strong> schedulesi butunlay o'chiriladi va qaytarib tiklanmaydi. Tasdiqlaysizmi?</>
+                  : confirmModal.schedule.active
+                    ? <><strong>{confirmModal.schedule.repName}</strong> vaqtincha to'xtatiladi. Keyinchalik qayta yoqsa bo'ladi.</>
+                    : <><strong>{confirmModal.schedule.repName}</strong> qayta yoqiladi va belgilangan vaqtda ishlaydi.</>}
+              </p>
+              {actionError && (
+                <div style={{ marginTop: 12, padding: "10px 14px", background: "#fef2f2", color: "#dc2626", borderRadius: 8, fontSize: 13, border: "1px solid #fecaca" }}>
+                  ⚠ {actionError}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", padding: "14px 24px", borderTop: "1px solid #f1f5f9", background: "#f8fafc" }}>
+              <button onClick={() => setConfirmModal(null)} disabled={actionLoading}
+                style={{ border: "1.5px solid #e2e8f0", background: "#fff", borderRadius: 10, padding: "8px 20px", fontSize: 14, color: "#64748b", cursor: "pointer", fontWeight: 600 }}>
+                Bekor qilish
+              </button>
+              <button
+                disabled={actionLoading}
+                onClick={() => confirmModal.type === "delete" ? handleDelete(confirmModal.schedule) : handleToggle(confirmModal.schedule)}
+                style={{
+                  border: "none", borderRadius: 10, padding: "8px 22px", fontSize: 14, fontWeight: 700,
+                  cursor: actionLoading ? "not-allowed" : "pointer", opacity: actionLoading ? 0.7 : 1, color: "#fff",
+                  background: confirmModal.type === "delete"
+                    ? "linear-gradient(135deg,#ef4444,#dc2626)"
+                    : confirmModal.schedule.active
+                      ? "linear-gradient(135deg,#f59e0b,#d97706)"
+                      : "linear-gradient(135deg,#22c55e,#16a34a)",
+                  display: "flex", alignItems: "center", gap: 8,
+                }}>
+                {actionLoading
+                  ? <><span style={{ width: 14, height: 14, border: "2px solid rgba(255,255,255,0.3)", borderTop: "2px solid #fff", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} /> Bajarilmoqda...</>
+                  : confirmModal.type === "delete" ? "O'chirish" : confirmModal.schedule.active ? "To'xtatish" : "Yoqish"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 };
 
@@ -365,7 +522,7 @@ const s = {
   center:     { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 260 },
   spinner:    { width: 32, height: 32, border: "3px solid #e2e8f0", borderTop: "3px solid #2563eb", borderRadius: "50%", animation: "spin 0.8s linear infinite" },
   errBox:     { background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 10, padding: "12px 20px", fontSize: 14 },
-  tableWrap:  { background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", boxShadow: "0 1px 8px rgba(0,0,0,0.06)", overflow: "hidden" },
+  tableWrap:  { background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", boxShadow: "0 1px 8px rgba(0,0,0,0.06)", overflow: "visible" },
   table:      { width: "100%", borderCollapse: "collapse" },
   thead:      { background: "#f8fafc" },
   th:         { padding: "8px 12px", textAlign: "left", fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: "1px solid #e2e8f0", whiteSpace: "nowrap" },
@@ -381,6 +538,16 @@ const s = {
   pageBtnActive:   { background: "#2563eb", color: "#fff", border: "1.5px solid #2563eb" },
   pageBtnDisabled: { opacity: 0.35, cursor: "not-allowed" },
   ellipsis:        { fontSize: 14, color: "#94a3b8", padding: "0 4px" },
+
+  // Action buttons
+  pauseBtn:   { display: "inline-flex", alignItems: "center", gap: 5, border: "1.5px solid #fde68a", background: "#fffbeb", color: "#d97706", borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" },
+  playBtn:    { display: "inline-flex", alignItems: "center", gap: 5, border: "1.5px solid #bbf7d0", background: "#f0fdf4", color: "#16a34a", borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" },
+  deleteBtn:  { display: "inline-flex", alignItems: "center", gap: 5, border: "1.5px solid #fecaca", background: "#fef2f2", color: "#dc2626", borderRadius: 7, padding: "4px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" },
+
+  // Confirm modal
+  overlay:    { position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 },
+  modal:      { background: "#fff", borderRadius: 18, width: 420, maxWidth: "90vw", boxShadow: "0 24px 60px rgba(0,0,0,0.18)", overflow: "hidden" },
+  modalHeader:{ display: "flex", alignItems: "center", gap: 14, padding: "20px 24px 16px", borderBottom: "1px solid #f1f5f9" },
 };
 
 export default ScheduledLogsPage;

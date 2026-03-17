@@ -4,12 +4,15 @@ import com.example.report_system.dto.*;
 import com.example.report_system.enums.ApplanguageEnum;
 import com.example.report_system.service.AdminService;
 import com.example.report_system.service.AuthService;
+import com.example.report_system.service.RepAccessService;
 import com.example.report_system.service.UserService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/admin")
@@ -19,11 +22,13 @@ public class AdminController {
     private final AdminService adminService;
     private final UserService userService;
     private final AuthService authService;
+    private final RepAccessService repAccessService;
 
-    public AdminController(AdminService adminService, UserService userService, AuthService authService) {
+    public AdminController(AdminService adminService, UserService userService, AuthService authService, RepAccessService repAccessService) {
         this.userService = userService;
         this.authService = authService;
         this.adminService = adminService;
+        this.repAccessService = repAccessService;
     }
 
 
@@ -53,6 +58,16 @@ public class AdminController {
         try {
             Map<String, Object> result = userService.getAll(page, size, search);
             return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/assigned")
+    public ResponseEntity<?> getAssigned(@RequestParam UUID repId) {
+        try {
+            List<Long> ids = repAccessService.getAssignedUserIds(repId);
+            return ResponseEntity.ok(ids);
         } catch (Exception e) {
             return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
         }
