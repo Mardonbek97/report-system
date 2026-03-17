@@ -412,6 +412,7 @@ const UsersPage = () => {
                       onChange={e => { setAddForm(p => ({ ...p, [f.key]: e.target.value })); setAddError(""); }}
                       onKeyDown={e => e.key === "Enter" && handleAddUser()}
                       placeholder={f.placeholder} style={s.modalInput}
+                      autoComplete="off"
                       autoFocus={idx === 0} />
                   </div>
                 </div>
