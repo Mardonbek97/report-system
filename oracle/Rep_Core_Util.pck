@@ -13,7 +13,7 @@ create or replace package Rep_Core_Util is
                          p_user   varchar2,
                          p_params clob,
                          o_Errmsg out varchar2);
-  Procedure Report_Log_Beg(p_repid raw, p_user number, o_rep_id out number);
+  Procedure Report_Log_Beg(p_repid raw, p_user number, p_params clob default null, o_rep_id out number);
   Procedure Report_Log_End(p_repid raw, i_rep_id number);
   Procedure Report_Log_Error(p_repid  raw,
                              i_rep_id number,
@@ -37,14 +37,14 @@ CREATE OR REPLACE Package Body Rep_Core_Util is
   g_Rep_Report_ID Number := SEQ_FOR_TMP_VALUES.NEXTVAL;
   ------------========================================================================================================---
   /**************************************Beginnig Report_Log_Beg********************************************************/
-  Procedure Report_Log_Beg(p_repid raw, p_user number, o_rep_id out number) is
+  Procedure Report_Log_Beg(p_repid raw, p_user number,  p_params clob default null, o_rep_id out number) is
   Begin
   
     o_rep_id := error_log_seq.nextval;
     Insert Into rep_core_log
-      (id, rep_id, user_id, status, percentage, BG_TIME)
+      (id, rep_id, user_id, status, percentage, BG_TIME, params)
     Values
-      (o_rep_id, p_repid, p_user, '1', '10', sysdate);
+      (o_rep_id, p_repid, p_user, '1', '10', sysdate, p_params);
     --1 Start
     --2 Finished succesfully
     --5 Error Generating
@@ -217,6 +217,7 @@ CREATE OR REPLACE Package Body Rep_Core_Util is
        
     rep_core_util.Report_Log_Beg(p_repid  => i_rep_id,
                                  p_user   => p_user,
+                                 p_params => p_params,
                                  o_rep_id => v_rep_id);   
   
     v_json := pljson(p_params);
