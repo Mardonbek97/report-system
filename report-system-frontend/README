@@ -1,6 +1,164 @@
-npm install
-npm start
+# Report System — Frontend
 
-/*If you need proxy*/
+React-based dashboard for the Oracle Report System. Connects to a Spring Boot backend, provides folder-based report navigation, scheduled report management, execution logs, and real-time WebSocket notifications.
+
+---
+
+## Tech Stack
+
+- **React 18** with Vite
+- **Inline styles** (no CSS framework)
+- **WebSocket** for real-time notifications
+- REST API via centralized `api.js` utility
+
+---
+
+## Prerequisites
+
+- Node.js 18+
+- Backend running at `http://localhost:8080` (or configure via `.env`)
+
+---
+
+## Getting Started
+
+```bash
+# Install dependencies
+npm install
+
+# Start development server
+npm run dev
+```
+
+App will be available at `http://localhost:5173`
+
+---
+
+## Corporate / Restricted Network
+
+If you are behind a corporate proxy:
+
+```bash
 npm config set proxy http://ip_address:port
 npm config set https-proxy http://ip_address:port
+```
+
+To unset proxy later:
+
+```bash
+npm config delete proxy
+npm config delete https-proxy
+```
+
+---
+
+## Environment Variables
+
+Create a `.env` file in the project root:
+
+```env
+VITE_API_BASE=http://localhost:8080
+```
+
+For production:
+
+```env
+# .env.production
+VITE_API_BASE=http://your-server-ip:8081
+```
+
+> Vite embeds these at build time — always rebuild after changing `.env.production`.
+
+---
+
+## Build for Production
+
+```bash
+npm run build
+```
+
+Output goes to `dist/`. Serve it with Nginx or any static file server.
+
+**Nginx example:**
+
+```nginx
+server {
+    listen 80;
+    root /var/www/report-system/dist;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /api/ {
+        proxy_pass http://localhost:8080;
+    }
+
+    location /ws/ {
+        proxy_pass http://localhost:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+```
+
+---
+
+## Project Structure
+
+```
+src/
+  api.js                  — Centralized fetch utility (auth headers, base URL)
+  App.jsx                 — Root: auth guard, Login / Dashboard routing
+  Dashboard.jsx           — Shell: sidebar, topbar, page routing, WS notifications
+  useNotifications.js     — WebSocket hook (auto-reconnect, ping/pong)
+  pushNotification.js     — Browser Notification permission helper
+  pages/
+    GenerateReportPage.jsx — Folder grid → report list → run / schedule
+    ScheduledLogsPage.jsx  — Scheduled report history, toggle, delete
+    LogsPage.jsx           — Execution logs with pagination
+    UsersPage.jsx          — User management (admin only)
+    ReportsPage.jsx        — Report–user access assignment (admin only)
+```
+
+---
+
+## Authentication
+
+JWT token is stored in `localStorage`. All requests include:
+
+```
+Authorization: Bearer <token>
+```
+
+WebSocket connection passes the token as a query parameter:
+
+```
+ws://host/ws/notifications?token=<jwt>
+```
+
+---
+
+## Real-time Notifications
+
+When a scheduled report finishes (success or error), a toast notification appears in the bottom-right corner. The WebSocket connection is established automatically on login and reconnects every 5 seconds if dropped.
+
+No external push service required — works entirely through the backend WebSocket endpoint.
+
+---
+
+## Key Design Decisions
+
+**Why no state management library?**
+All state is local to components or lifted one level. The app has no cross-cutting shared state that would justify Redux or Zustand overhead.
+
+**Why inline styles?**
+Zero build-time CSS dependencies, no class name collisions, styles are co-located with components. Trade-off is verbosity, which is acceptable at this scale.
+
+**Why WebSocket over FCM/Web Push?**
+The backend runs in a network-restricted environment without outbound internet access. WebSocket requires no external services and works reliably on localhost and intranet deployments.
+
+**Why `VITE_API_BASE` instead of hardcoding?**
+Allows the same build artifact to be deployed to different environments by only changing environment files, without touching source code.
