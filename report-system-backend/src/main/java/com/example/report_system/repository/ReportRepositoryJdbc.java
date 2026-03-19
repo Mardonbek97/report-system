@@ -19,15 +19,59 @@ public class ReportRepositoryJdbc {
         this.namedJdbc = new NamedParameterJdbcTemplate(dataSource);
     }
 
-    // ── Reportlar ro'yxati: ROWNUM pagination ────────────────────────────────
-    public List<ReportListDto> findAllPaged(int offset, int rownumMax, String like, boolean hasSearch, Boolean isAdmin, Long userId) {
+    // ── Folderlar ro'yxati (user ga tegishli reportlarning distinct folderlari) ──
+    public List<Map<String, Object>> findFolders(boolean isAdmin, Long userId) {
+        String userJoin = isAdmin ? "" :
+                "JOIN rep_core_access a ON a.rep_id = r.id AND a.user_id = :user_id ";
 
-        // WHERE shartlarini to'g'ri qurish
-        String searchWhere = hasSearch ? " WHERE LOWER(r.name) LIKE :like " : " ";
-        String userWhere   = !isAdmin  ? " JOIN rep_core_access a ON a.rep_id = r.id AND a.user_id = :user_id " : " ";
+        String sql =
+                "SELECT DISTINCT " +
+                        "  LOWER(RAWTOHEX(f.id))   AS folder_id, " +
+                        "  f.name                  AS folder_name, " +
+                        "  COUNT(r.id) OVER (PARTITION BY f.id) AS report_count " +
+                        "FROM rep_core_folder f " +
+                        "JOIN rep_core_name r ON r.folder_id = f.id " +
+                        userJoin +
+                        "ORDER BY f.name ASC";
+
+        Map<String, Object> params = new HashMap<>();
+        if (!isAdmin) params.put("user_id", userId);
+
+        // Oracle queryForList uppercase nomlarni lowercase ga o'giramiz
+        return namedJdbc.queryForList(sql, params).stream().map(row -> {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("folderId",    row.get("FOLDER_ID"));
+            m.put("folderName",  row.get("FOLDER_NAME"));
+            m.put("reportCount", row.get("REPORT_COUNT"));
+            return m;
+        }).collect(java.util.stream.Collectors.toList());
+    }
+
+    // ── Reportlar ro'yxati: ROWNUM pagination, folder filter bilan ──────────
+    public List<ReportListDto> findAllPaged(int offset, int rownumMax,
+                                            String like, boolean hasSearch,
+                                            Boolean isAdmin, Long userId,
+                                            String folderId) {
+
+        String userJoin    = !isAdmin ? " JOIN rep_core_access a ON a.rep_id = r.id AND a.user_id = :user_id " : " ";
+        String folderJoin  = "LEFT JOIN rep_core_folder f ON f.id = r.folder_id ";
+
+        List<String> conditions = new ArrayList<>();
+        if (hasSearch)             conditions.add("LOWER(r.name) LIKE :like");
+        if (folderId != null && !folderId.isEmpty())
+            conditions.add("LOWER(RAWTOHEX(f.id)) = :folder_id");
+
+        String whereClause = conditions.isEmpty() ? " "
+                : " WHERE " + String.join(" AND ", conditions) + " ";
 
         String innerSql =
-                "SELECT r.id, r.name FROM rep_core_name r" + userWhere + searchWhere + "ORDER BY r.name ASC";
+                "SELECT r.id, r.name, " +
+                        "       LOWER(RAWTOHEX(f.id)) AS folder_id, f.name AS folder_name " +
+                        "FROM rep_core_name r " +
+                        userJoin +
+                        folderJoin +
+                        whereClause +
+                        "ORDER BY r.name ASC";
 
         String sql =
                 "SELECT * FROM (" +
@@ -40,49 +84,63 @@ public class ReportRepositoryJdbc {
         params.put("offset", offset);
         if (hasSearch) params.put("like", like);
         if (!isAdmin)  params.put("user_id", userId);
+        if (folderId != null && !folderId.isEmpty())
+            params.put("folder_id", folderId.replace("-", "").toLowerCase());
 
-        return namedJdbc.query(sql, params,
-                (rs, i) -> new ReportListDto(toUuid(rs.getBytes("id")), rs.getString("name")));
+        return namedJdbc.query(sql, params, (rs, i) -> new ReportListDto(
+                toUuid(rs.getBytes("id")),
+                rs.getString("name"),
+                rs.getString("folder_id") != null ? UUID.fromString(hexToUuidStr(rs.getString("folder_id"))) : null,
+                rs.getString("folder_name")
+        ));
     }
 
-    // ── Reportlar soni ───────────────────────────────────────────────────────
-    public int countAll(String like, boolean hasSearch, Boolean isAdmin, Long userId) {
+    // ── Reportlar soni (folder filter bilan) ────────────────────────────────
+    public int countAll(String like, boolean hasSearch, Boolean isAdmin, Long userId, String folderId) {
+
+        String userJoin   = !isAdmin ? " JOIN rep_core_access a ON a.rep_id = r.id AND a.user_id = :user_id " : " ";
+        String folderJoin = "LEFT JOIN rep_core_folder f ON f.id = r.folder_id ";
 
         List<String> conditions = new ArrayList<>();
-        if (hasSearch) conditions.add("LOWER(r.name) LIKE :like");
-        if (!isAdmin)  conditions.add("r.id IN (SELECT rep_id FROM rep_core_access WHERE user_id = :user_id)");
+        if (hasSearch)             conditions.add("LOWER(r.name) LIKE :like");
+        if (folderId != null && !folderId.isEmpty())
+            conditions.add("LOWER(RAWTOHEX(f.id)) = :folder_id");
 
-        String whereClause = conditions.isEmpty() ? " " : " WHERE " + String.join(" AND ", conditions) + " ";
+        String whereClause = conditions.isEmpty() ? " "
+                : " WHERE " + String.join(" AND ", conditions) + " ";
 
-        String countSql = "SELECT COUNT(*) FROM rep_core_name r" + whereClause;
+        String countSql =
+                "SELECT COUNT(*) FROM rep_core_name r " +
+                        userJoin + folderJoin + whereClause;
 
         Map<String, Object> params = new HashMap<>();
         if (hasSearch) params.put("like", like);
         if (!isAdmin)  params.put("user_id", userId);
+        if (folderId != null && !folderId.isEmpty())
+            params.put("folder_id", folderId.replace("-", "").toLowerCase());
 
         Integer total = namedJdbc.queryForObject(countSql, params, Integer.class);
         return total != null ? total : 0;
     }
 
     // ── Execution logs: ROWNUM pagination ────────────────────────────────────
-    // GTT EMAS — oddiy jadval rep_core_log dan o'qiydi, repositoryda joiz
     public List<ReportExecLogDto> findLogsPaged(Long userId, boolean isAdmin,
-                                                 long minRow, long maxRow) {
+                                                long minRow, long maxRow) {
         String where = isAdmin ? "" : "WHERE l.user_id = :user_id ";
 
         String sql =
                 "SELECT * FROM ( " +
-                "  SELECT inner_.*, ROWNUM rn FROM ( " +
-                "    SELECT l.id, r.name AS report_name, u.username, l.bg_time, " +
-                "           l.end_time, DECODE(l.status, '1', 'Running', '2', 'Finished', '5', 'Error') AS status, " +
-                "           l.percentage, l.error_msg " +
-                "    FROM rep_core_log l " +
-                "    LEFT JOIN rep_core_name r ON l.rep_id = r.id " +
-                "    LEFT JOIN rep_core_users u ON l.user_id = u.id " +
-                "    " + where +
-                "    ORDER BY l.id DESC " +
-                "  ) inner_ WHERE ROWNUM <= :max_row " +
-                ") WHERE rn > :min_row";
+                        "  SELECT inner_.*, ROWNUM rn FROM ( " +
+                        "    SELECT l.id, r.name AS report_name, u.username, l.bg_time, " +
+                        "           l.end_time, DECODE(l.status, '1', 'Running', '2', 'Finished', '5', 'Error') AS status, " +
+                        "           l.percentage, l.error_msg " +
+                        "    FROM rep_core_log l " +
+                        "    LEFT JOIN rep_core_name r ON l.rep_id = r.id " +
+                        "    LEFT JOIN rep_core_users u ON l.user_id = u.id " +
+                        "    " + where +
+                        "    ORDER BY l.id DESC " +
+                        "  ) inner_ WHERE ROWNUM <= :max_row " +
+                        ") WHERE rn > :min_row";
 
         Map<String, Object> params = new HashMap<>();
         params.put("min_row", minRow);
@@ -113,10 +171,16 @@ public class ReportRepositoryJdbc {
         return total != null ? total : 0L;
     }
 
-    // ── byte[] → UUID ────────────────────────────────────────────────────────
+    // ── Helpers ──────────────────────────────────────────────────────────────
     private UUID toUuid(byte[] bytes) {
         if (bytes == null) return null;
         ByteBuffer bb = ByteBuffer.wrap(bytes);
         return new UUID(bb.getLong(), bb.getLong());
+    }
+
+    private String hexToUuidStr(String hex) {
+        if (hex == null || hex.length() != 32) return null;
+        return hex.substring(0, 8) + "-" + hex.substring(8, 12) + "-"
+                + hex.substring(12, 16) + "-" + hex.substring(16, 20) + "-" + hex.substring(20);
     }
 }

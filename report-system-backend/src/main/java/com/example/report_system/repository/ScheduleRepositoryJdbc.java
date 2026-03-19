@@ -127,9 +127,10 @@ public class ScheduleRepositoryJdbc {
     public List<ScheduleDto> findDueOnetime() {
         String sql =
                 "SELECT s.id, s.rep_id, s.user_id, u.username, " +
-                        "       s.params, s.file_format, s.cron_expr, s.run_at " +
+                        "       s.params, s.file_format, s.cron_expr, s.run_at, n.name AS rep_name " +
                         "FROM rep_core_schedule s " +
                         "JOIN rep_core_users u ON u.id = s.user_id " +
+                        "JOIN rep_core_name n  ON n.id = s.rep_id " +
                         "WHERE s.is_active = 1 " +
                         "  AND (s.is_deleted IS NULL OR s.is_deleted = 0) " +
                         "  AND s.cron_expr IS NULL " +
@@ -143,9 +144,10 @@ public class ScheduleRepositoryJdbc {
     public List<ScheduleDto> findActiveCron() {
         String sql =
                 "SELECT s.id, s.rep_id, s.user_id, u.username, " +
-                        "       s.params, s.file_format, s.cron_expr, s.run_at " +
+                        "       s.params, s.file_format, s.cron_expr, s.run_at, n.name AS rep_name " +
                         "FROM rep_core_schedule s " +
                         "JOIN rep_core_users u ON u.id = s.user_id " +
+                        "JOIN rep_core_name n  ON n.id = s.rep_id " +
                         "WHERE s.is_active = 1 " +
                         "  AND (s.is_deleted IS NULL OR s.is_deleted = 0) " +
                         "  AND s.cron_expr IS NOT NULL";
@@ -179,6 +181,8 @@ public class ScheduleRepositoryJdbc {
         d.setCronExpr(rs.getString("cron_expr"));
         Timestamp runAt = rs.getTimestamp("run_at");
         if (runAt != null) d.setRunAt(runAt.toLocalDateTime().toString());
+        // rep_name mavjud bo'lsa o'qiymiz
+        try { d.setRepName(rs.getString("rep_name")); } catch (Exception ignored) {}
         return d;
     }
 

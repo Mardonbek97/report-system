@@ -16,25 +16,24 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.util.List;
 
-// JwtAuthFilter.java
 @Component
 public class JwtAuthFilter extends OncePerRequestFilter {
 
-    private final JwtUtil jwtUtil;
-    private final UserRepository userRepository;
+    private final JwtUtil          jwtUtil;
+    private final UserRepository   userRepository;
 
     public JwtAuthFilter(JwtUtil jwtUtil, UserRepository userRepository) {
-        this.jwtUtil = jwtUtil;
+        this.jwtUtil        = jwtUtil;
         this.userRepository = userRepository;
     }
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getServletPath();
-        return path.startsWith("/api/auth/") ||
-                path.startsWith("/swagger-ui") ||
-                path.startsWith("/v3/api-docs") ||
-                path.startsWith("/webjars") ||
+        return path.startsWith("/api/auth/")      ||
+                path.startsWith("/swagger-ui")     ||
+                path.startsWith("/v3/api-docs")    ||
+                path.startsWith("/webjars")        ||
                 path.startsWith("/swagger-resources");
     }
 
@@ -44,15 +43,24 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                                     FilterChain filterChain)
             throws ServletException, IOException {
 
-        final String authHeader = request.getHeader("Authorization");
+        // 1. Header dan token olish (oddiy REST)
+        String jwt = null;
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            jwt = authHeader.substring(7);
+        }
 
-        // Token yo'q bo'lsa — shunchaki o'tkazib yubor (Security o'zi hal qiladi)
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+        // 2. Query param dan token olish (WebSocket uchun)
+        // WebSocket brauzerda custom header yuborolmaydi — ?token=... orqali keladi
+        if (jwt == null) {
+            jwt = request.getParameter("token");
+        }
+
+        if (jwt == null) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        final String jwt = authHeader.substring(7);
         final String username = jwtUtil.extractUsername(jwt);
 
         if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
@@ -62,7 +70,6 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 UsernamePasswordAuthenticationToken authToken =
                         new UsernamePasswordAuthenticationToken(
                                 user, null,
-                                // ✅ "ROLE_" prefix qo'shildi
                                 List.of(new SimpleGrantedAuthority(user.getRole().name()))
                         );
                 authToken.setDetails(

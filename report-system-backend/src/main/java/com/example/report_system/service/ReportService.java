@@ -2,7 +2,6 @@ package com.example.report_system.service;
 
 import com.example.report_system.dto.ReportExecLogDto;
 import com.example.report_system.dto.ReportListDto;
-import com.example.report_system.entity.Users;
 import com.example.report_system.repository.ReportRepository;
 import com.example.report_system.repository.ReportRepositoryJdbc;
 import com.example.report_system.repository.UserRepository;
@@ -14,26 +13,25 @@ import org.springframework.stereotype.Service;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
 public class ReportService {
 
-    private final ReportRepository       reportRepository;
+    private final ReportRepository reportRepository;
     private final ReportRepositoryJdbc reportRepositoryJdbc;
-    private final UserRepository         userRepository;
+    private final UserRepository userRepository;
 
     public ReportService(ReportRepository reportRepository,
                          ReportRepositoryJdbc reportRepositoryJdbc,
                          UserRepository userRepository) {
-        this.reportRepository       = reportRepository;
+        this.reportRepository = reportRepository;
         this.reportRepositoryJdbc = reportRepositoryJdbc;
-        this.userRepository         = userRepository;
+        this.userRepository = userRepository;
     }
 
     // ── Admin: pagination bilan barcha reportlar ─────────────────────────────
-    public Map<String, Object> getAllReport(int page, int size, String search, Boolean isAdmin, String username) {
+    /*public Map<String, Object> getAllReport(int page, int size, String search, Boolean isAdmin, String username) {
         int offset    = page * size;
         int rownumMax = offset + size;
         boolean hasSearch = search != null && !search.trim().isEmpty();
@@ -53,13 +51,13 @@ public class ReportService {
         result.put("number",        page);
         result.put("size",          size);
         return result;
-    }
+    }*/
 
     // ── User ga tegishli reportlar (JPA — simple query) ──────────────────────
     public List<ReportListDto> getAllByUser(String username) {
         return reportRepository.findAll()
                 .stream()
-                .map(r -> new ReportListDto(r.getId(), r.getName()))
+                .map(r -> new ReportListDto(r.getId(), r.getName(), null, null))
                 .collect(Collectors.toUnmodifiableList());
     }
 
@@ -67,7 +65,7 @@ public class ReportService {
     public List<ReportListDto> getAllReportByName(String reportName) {
         return reportRepository.findByReportName(reportName)
                 .stream()
-                .map(r -> new ReportListDto(r.getId(), r.getName()))
+                .map(r -> new ReportListDto(r.getId(), r.getName(), null, null))
                 .collect(Collectors.toUnmodifiableList());
     }
 
@@ -81,9 +79,38 @@ public class ReportService {
         long minRow = (long) page * size;
         long maxRow = (long) (page + 1) * size;
 
-        long total   = reportRepositoryJdbc.countLogs(userId, isAdmin);
+        long total = reportRepositoryJdbc.countLogs(userId, isAdmin);
         List<ReportExecLogDto> content = reportRepositoryJdbc.findLogsPaged(userId, isAdmin, minRow, maxRow);
 
         return new PageImpl<>(content, PageRequest.of(page, size), total);
     }
+
+    public List<Map<String, Object>> getFolders(boolean isAdmin, Long userId) {
+        return reportRepositoryJdbc.findFolders(isAdmin, userId);
+    }
+
+    // ── Reportlar ro'yxati (folderId qo'shildi) ──────────────────────────────
+    public Map<String, Object> getAllReport(int page, int size, String search,
+                                            boolean isAdmin, Long userId,
+                                            String folderId) {
+        int offset = page * size;
+        int rownumMax = offset + size;
+        boolean hasSearch = search != null && !search.trim().isEmpty();
+        String like = "%" + (hasSearch ? search.trim().toLowerCase() : "") + "%";
+
+        int total = reportRepositoryJdbc.countAll(like, hasSearch, isAdmin, userId, folderId);
+        List<ReportListDto> content = reportRepositoryJdbc.findAllPaged(
+                offset, rownumMax, like, hasSearch, isAdmin, userId, folderId);
+
+        int totalPages = size > 0 ? (int) Math.ceil((double) total / size) : 1;
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("content", content);
+        result.put("totalElements", total);
+        result.put("totalPages", Math.max(1, totalPages));
+        result.put("number", page);
+        result.put("size", size);
+        return result;
+    }
+
 }

@@ -34,111 +34,115 @@ import java.util.UUID;
 @RequestMapping("/reports")
 public class ReportController {
 
-    private final ReportService reportService;
-    private final ReportExecService reportExecService;
+    private final ReportService        reportService;
+    private final ReportExecService    reportExecService;
     private final ReportExecZipService reportExecZipService;
-    private final ExcelExportService excelExportService;
+    private final ExcelExportService   excelExportService;
+
     @Value("${report.download.dir}")
     private String allowedDownloadDir;
+
     @Value("${report.export.dir}")
     private String allowedExportDir;
 
-    public ReportController(ReportService reportService, ReportExecService reportExecService, ReportExecZipService reportExecZipService, ExcelExportService excelExportService) {
-        this.reportService = reportService;
-        this.reportExecService = reportExecService;
+    public ReportController(ReportService reportService,
+                            ReportExecService reportExecService,
+                            ReportExecZipService reportExecZipService,
+                            ExcelExportService excelExportService) {
+        this.reportService        = reportService;
+        this.reportExecService    = reportExecService;
         this.reportExecZipService = reportExecZipService;
-        this.excelExportService = excelExportService;
+        this.excelExportService   = excelExportService;
     }
 
-    @GetMapping("")
-    public ResponseEntity<Map<String, Object>> getAll(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size,
-            @RequestParam(defaultValue = "") String search) {
+    // ── GET /reports/folders ─────────────────────────────────────────────────
+    @GetMapping("/folders")
+    public ResponseEntity<?> getFolders() {
         try {
-            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-            Users user = (Users) auth.getPrincipal();
-            String username = user.getUsername();
-            boolean isAdmin = auth.getAuthorities().stream()
-                    .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
-            Map<String, Object> result = reportService.getAllReport(page, size, search, isAdmin, username);
-            return ResponseEntity.ok(result);
+            Authentication auth = getAuth();
+            List<Map<String, Object>> folders = reportService.getFolders(isAdmin(auth), getCurrentUser(auth).getId());
+            return ResponseEntity.ok(folders);
         } catch (Exception e) {
-            e.printStackTrace();
-            String msg = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
-            return ResponseEntity.status(500).body(Map.of("error", msg != null ? msg : e.toString()));
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
         }
     }
 
+    // ── GET /reports?page=&size=&search=&folderId= ───────────────────────────
+    @GetMapping
+    public ResponseEntity<Map<String, Object>> getAll(
+            @RequestParam(defaultValue = "0")  int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "")   String search,
+            @RequestParam(required = false)    String folderId) {
+        try {
+            Authentication auth = getAuth();
+            Map<String, Object> result = reportService.getAllReport(
+                    page, size, search, isAdmin(auth), getCurrentUser(auth).getId(), folderId);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
 
+    // ── GET /reports/report?repId= ───────────────────────────────────────────
     @GetMapping("/report")
-    public List<ReportParamsExecDto> getParam(@RequestParam UUID repId, @RequestHeader(value = "Accept-Language") ApplanguageEnum lang) {
+    public List<ReportParamsExecDto> getParam(
+            @RequestParam UUID repId,
+            @RequestHeader(value = "Accept-Language") ApplanguageEnum lang) {
         return reportExecService.getParams(repId);
     }
 
-
+    // ── POST /reports/generate ───────────────────────────────────────────────
     @PostMapping("/generate")
     public ResponseEntity<String> generateReport(@RequestBody ExecuteReportRequestDto request) throws Exception {
-
         ReportExecZipService.ExportResult result = reportExecZipService.executeAndExportZip(request);
-
-        String ext = result.extension();
-        String fileName = "report_" + System.currentTimeMillis() + "." + ext;
+        String fileName = "report_" + System.currentTimeMillis() + "." + result.extension();
         String filePath = allowedExportDir + fileName;
-
         Files.write(Paths.get(filePath), result.bytes());
-
         return ResponseEntity.ok("Fayl saqlandi: " + filePath);
     }
 
-
+    // ── GET /reports/download?path= ──────────────────────────────────────────
     @GetMapping("/download")
     public ResponseEntity<Resource> downloadFile(@RequestParam String path,
                                                  @AuthenticationPrincipal Users currentUser) throws IOException {
-
-        // 1. Path traversal himoyasi
-        Path filePath = Paths.get(path).normalize().toAbsolutePath();
+        Path filePath   = Paths.get(path).normalize().toAbsolutePath();
         Path allowedDir = Paths.get(allowedDownloadDir).toAbsolutePath();
 
         if (!filePath.startsWith(allowedDir)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
 
-        // 2. Ruxsat etilgan formatlar
-        String filePathStr = filePath.toString().toLowerCase();
-        if (!filePathStr.endsWith(".xlsx")
-                && !filePathStr.endsWith(".zip")
-                && !filePathStr.endsWith(".docx")
-                && !filePathStr.endsWith(".txt")) {
+        String fp = filePath.toString().toLowerCase();
+        if (!fp.endsWith(".xlsx") && !fp.endsWith(".zip")
+                && !fp.endsWith(".docx") && !fp.endsWith(".txt")) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
 
-        // 3. Fayl mavjudligini tekshirish
         Resource resource = new UrlResource(filePath.toUri());
         if (!resource.exists() || !resource.isReadable()) {
             return ResponseEntity.notFound().build();
         }
 
-        // 4. Content type
         MediaType contentType;
-        if (filePathStr.endsWith(".zip")) contentType = MediaType.parseMediaType("application/zip");
-        else if (filePathStr.endsWith(".docx"))
-            contentType = MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-        else if (filePathStr.endsWith(".txt")) contentType = MediaType.TEXT_PLAIN;
-        else
-            contentType = MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        if      (fp.endsWith(".zip"))  contentType = MediaType.parseMediaType("application/zip");
+        else if (fp.endsWith(".docx")) contentType = MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+        else if (fp.endsWith(".txt"))  contentType = MediaType.TEXT_PLAIN;
+        else                           contentType = MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename=\"" + filePath.getFileName().toString() + "\"")
+                        "attachment; filename=\"" + filePath.getFileName() + "\"")
                 .contentType(contentType)
                 .body(resource);
     }
 
+    // ── GET /reports/report/logs ─────────────────────────────────────────────
     @GetMapping("/report/logs")
     public ResponseEntity<Map<String, Object>> getReportLogs(
             @RequestParam String username,
-            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "0")  int page,
             @RequestParam(defaultValue = "15") int size) {
 
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
@@ -147,16 +151,26 @@ public class ReportController {
 
         Page<ReportExecLogDto> pageResult = reportService.fetchTempData(username, isAdmin, page, size);
 
-        Map<String, Object> response = Map.of(
-                "content", pageResult.getContent(),
-                "totalPages", pageResult.getTotalPages(),
+        return ResponseEntity.ok(Map.of(
+                "content",       pageResult.getContent(),
+                "totalPages",    pageResult.getTotalPages(),
                 "totalElements", pageResult.getTotalElements(),
-                "number", pageResult.getNumber(),
-                "size", pageResult.getSize()
-        );
-
-        return ResponseEntity.ok(response);
+                "number",        pageResult.getNumber(),
+                "size",          pageResult.getSize()
+        ));
     }
 
+    // ── Helpers ──────────────────────────────────────────────────────────────
+    private Authentication getAuth() {
+        return SecurityContextHolder.getContext().getAuthentication();
+    }
 
+    private boolean isAdmin(Authentication auth) {
+        return auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+    }
+
+    private Users getCurrentUser(Authentication auth) {
+        return (Users) auth.getPrincipal();
+    }
 }

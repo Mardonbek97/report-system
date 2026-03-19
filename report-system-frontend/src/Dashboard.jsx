@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { api } from "./api";
+import { useNotifications } from "./useNotifications";
 import UsersPage from "./pages/UsersPage";
 import ReportsPage from "./pages/ReportsPage";
 import LogsPage from "./pages/LogsPage";
@@ -69,6 +70,18 @@ const Dashboard = ({ onLogout, username }) => {
   const [pwLoading, setPwLoading] = useState(false);
   const [pwError,   setPwError]   = useState("");
   const [pwSuccess, setPwSuccess] = useState("");
+
+  // ── WebSocket notifications ───────────────────────────────────────────────
+  const [notifications, setNotifications] = useState([]);
+
+  const handleWsMessage = useCallback((data) => {
+    const id = Date.now();
+    setNotifications(prev => [...prev, { id, title: data.title, body: data.body }]);
+    // 5 soniyadan keyin avtomatik yopiladi
+    setTimeout(() => setNotifications(prev => prev.filter(n => n.id !== id)), 5000);
+  }, []);
+
+  useNotifications(handleWsMessage);
 
   const openPwModal  = () => { setPwValue(""); setPwError(""); setPwSuccess(""); setPwModal(true); };
   const closePwModal = () => { if (pwLoading) return; setPwModal(false); };
@@ -174,16 +187,18 @@ const Dashboard = ({ onLogout, username }) => {
               <p style={s.pageSub}>{PAGE_SUBS[active] || ""}</p>
             </div>
 
-            {/* Right side: clock + update password btn */}
+            {/* Right side: clock + buttons */}
             <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
               <div style={s.topbarDate}>{formatted}</div>
-              <button onClick={openPwModal} style={s.pwBtn}>
-                <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                    d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                </svg>
-                Parolni o'zgartirish
-              </button>
+              <div style={{ display: "flex", gap: 6 }}>
+<button onClick={openPwModal} style={s.pwBtn}>
+                  <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round"
+                      d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                  Parolni o'zgartirish
+                </button>
+              </div>
             </div>
           </header>
 
@@ -242,6 +257,31 @@ const Dashboard = ({ onLogout, username }) => {
           </div>
         </div>
       )}
+      {/* ── Toast Notifications ── */}
+      <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 9999, display: "flex", flexDirection: "column", gap: 10 }}>
+        {notifications.map(n => (
+          <div key={n.id} style={{
+            background: "#fff", borderRadius: 12, padding: "12px 16px",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.14)", border: "1px solid #e2e8f0",
+            minWidth: 280, maxWidth: 360, animation: "modalIn 0.2s ease",
+            display: "flex", alignItems: "flex-start", gap: 10,
+          }}>
+            <div style={{ fontSize: 20, lineHeight: 1, flexShrink: 0 }}>
+              {n.title.startsWith("✅") ? "✅" : "❌"}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a", marginBottom: 2 }}>
+                {n.title.replace("✅ ", "").replace("❌ ", "")}
+              </div>
+              <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.4 }}>{n.body}</div>
+            </div>
+            <button onClick={() => setNotifications(prev => prev.filter(x => x.id !== n.id))}
+              style={{ border: "none", background: "none", color: "#94a3b8", cursor: "pointer", fontSize: 14, padding: 0, flexShrink: 0 }}>
+              ✕
+            </button>
+          </div>
+        ))}
+      </div>
     </>
   );
 };

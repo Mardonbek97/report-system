@@ -61,6 +61,8 @@ public class SecurityConfig {
                         .requestMatchers("/admin/**").hasRole("ADMIN")
                         .requestMatchers("/reports/**").hasAnyRole("ADMIN", "USER")
                         .requestMatchers("/schedule/**").hasAnyRole("ADMIN", "USER")
+                        .requestMatchers("/push/**").hasAnyRole("ADMIN", "USER")
+                        .requestMatchers("/ws/**").hasAnyRole("ADMIN", "USER")
                         .anyRequest().authenticated()
                 )
                /* .exceptionHandling(ex -> ex

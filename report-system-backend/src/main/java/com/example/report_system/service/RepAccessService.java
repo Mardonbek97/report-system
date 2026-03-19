@@ -32,27 +32,34 @@ public class RepAccessService {
         Reports report = reportRepository.findById(dto.repId())
                 .orElseThrow(() -> new RuntimeException("Report topilmadi"));
 
-        List<RepAccess> accesses = new ArrayList<>();
+        // 1. Hozir DB da bu reportga biriktirilgan barcha user ID lari
+        List<Long> existingUserIds = repAccessRepository.findUserIdsByRepId(dto.repId());
 
-        System.out.println(dto);
-        for (Long userId : dto.userIds()) {
-            Users user = userRepository.findById(userId)
-                    .orElseThrow(() -> new RuntimeException("User topilmadi: " + userId));
+        // 2. Yangi tanlangan ID lar
+        List<Long> selectedUserIds = dto.userIds();
 
-            if (repAccessRepository.countByUserIdAndRepId(userId, dto.repId()) < 1) {
+        // 3. Qo'shish kerak — tanlangan lekin DB da yo'q
+        for (Long userId : selectedUserIds) {
+            if (!existingUserIds.contains(userId)) {
+                Users user = userRepository.findById(userId)
+                        .orElseThrow(() -> new RuntimeException("User topilmadi: " + userId));
                 RepAccess repAccess = new RepAccess();
                 repAccess.setUsers(user);
                 repAccess.setReports(report);
-                System.out.println(" if ichi " + dto);
-
                 repAccessRepository.save(repAccess);
-            } else {
-                return 0;
-                //throw new AppBadException("The report already added to this user");
             }
         }
+
+        // 4. O'chirish kerak — DB da bor lekin hozir tanlanmagan
+        for (Long userId : existingUserIds) {
+            if (!selectedUserIds.contains(userId)) {
+                repAccessRepository.deleteByUserIdAndRepId(userId, dto.repId());
+            }
+        }
+
         return 1;
     }
+
 
     public List<Long> getAssignedUserIds(UUID repId) {
         return repAccessRepository.findUserIdsByRepId(repId);

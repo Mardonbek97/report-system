@@ -481,11 +481,17 @@ const ScheduleModal = ({ report, onClose }) => {
 };
 
 // ── Main Page ──────────────────────────────────────────────────
-const PAGE_SIZE = 18;
+const PAGE_SIZE = 10;
 
 const GenerateReportPage = () => {
+  const [view, setView]                     = useState("folders"); // "folders" | "reports"
+  const [folders, setFolders]               = useState([]);
+  const [foldersLoading, setFoldersLoading] = useState(true);
+  const [selectedFolder, setSelectedFolder] = useState(null); // { id, name }
+  const [folderView, setFolderView]         = useState("list"); // "grid" | "list"
+
   const [reports, setReports]               = useState([]);
-  const [loading, setLoading]               = useState(true);
+  const [loading, setLoading]               = useState(false);
   const [error, setError]                   = useState("");
   const [searchInput, setSearchInput]       = useState("");
   const [search, setSearch]                 = useState("");
@@ -496,19 +502,33 @@ const GenerateReportPage = () => {
   const [totalPages, setTotalPages]         = useState(0);
   const [totalElements, setTotalElements]   = useState(0);
 
-  const fetchReports = async (pg = 0, q = "") => {
+  // ── Folderlarni yuklash ──────────────────────────────────────
+  useEffect(() => {
+    const load = async () => {
+      setFoldersLoading(true);
+      try {
+        const res = await api.get("/api/reports/folders");
+        if (!res.ok) throw new Error("Folderlarni yuklashda xatolik");
+        const data = await res.json();
+        setFolders(data);
+      } catch (err) { setError(err.message); }
+      finally { setFoldersLoading(false); }
+    };
+    load();
+  }, []);
+
+  // ── Reportlarni yuklash ──────────────────────────────────────
+  const fetchReports = async (pg = 0, q = "", folder = selectedFolder) => {
     setLoading(true); setError("");
     try {
+      const folderParam = folder ? `&folderId=${folder.id}` : "";
       const res = await api.get(
-        `/api/reports?page=${pg}&size=${PAGE_SIZE}&search=${encodeURIComponent(q)}`
+        `/api/reports?page=${pg}&size=${PAGE_SIZE}&search=${encodeURIComponent(q)}${folderParam}`
       );
       if (!res.ok) throw new Error("Ma'lumotlarni yuklashda xatolik");
       const data = await res.json();
       if (Array.isArray(data)) {
-        setReports(data);
-        setTotalPages(1);
-        setTotalElements(data.length);
-        setPage(0);
+        setReports(data); setTotalPages(1); setTotalElements(data.length); setPage(0);
       } else {
         setReports(data.content ?? []);
         setTotalPages(data.totalPages ?? 1);
@@ -519,20 +539,44 @@ const GenerateReportPage = () => {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchReports(0, ""); }, []);
+  // Folder bosilganda
+  const openFolder = (folder) => {
+    setSelectedFolder(folder);
+    setView("reports");
+    setSearchInput(""); setSearch(""); setPage(0);
+    fetchReports(0, "", folder);
+    window.history.pushState({ view: "reports", folder }, "", "");
+  };
+
+  // Orqaga
+  const goBack = () => {
+    setView("folders");
+    setSelectedFolder(null);
+    setReports([]);
+    setSearchInput(""); setSearch("");
+  };
+
+  // Brauzer back / Alt+←
+  useEffect(() => {
+    const handlePop = () => {
+      if (view === "reports") goBack();
+    };
+    window.addEventListener("popstate", handlePop);
+    return () => window.removeEventListener("popstate", handlePop);
+  }, [view]);
 
   // Debounced search
   useEffect(() => {
+    if (view !== "reports") return;
     const t = setTimeout(() => {
-      if (searchInput === "") return;
       setSearch(searchInput);
-      fetchReports(0, searchInput);
+      fetchReports(0, searchInput, selectedFolder);
       setPage(0);
     }, 400);
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  const goPage = (p) => fetchReports(p, search);
+  const goPage = (p) => fetchReports(p, search, selectedFolder);
 
   const getPageRange = () => {
     const delta = 2, range = [];
@@ -546,6 +590,16 @@ const GenerateReportPage = () => {
     window.open(`/?repId=${report.id}`, "_blank");
   };
 
+  // ── Folder colors (index ga qarab) ──────────────────────────
+  const FOLDER_COLORS = [
+    { bg: "#eff6ff", border: "#bfdbfe", icon: "#2563eb", text: "#1e40af" },
+    { bg: "#faf5ff", border: "#ddd6fe", icon: "#7c3aed", text: "#5b21b6" },
+    { bg: "#f0fdf4", border: "#bbf7d0", icon: "#16a34a", text: "#15803d" },
+    { bg: "#fffbeb", border: "#fde68a", icon: "#d97706", text: "#b45309" },
+    { bg: "#fef2f2", border: "#fecaca", icon: "#dc2626", text: "#b91c1c" },
+    { bg: "#f0fdfa", border: "#99f6e4", icon: "#0d9488", text: "#0f766e" },
+  ];
+
   return (
     <div style={s.wrapper}>
       <style>{`@keyframes grSpin{to{transform:rotate(360deg)}}`}</style>
@@ -554,132 +608,219 @@ const GenerateReportPage = () => {
         <ScheduleModal report={scheduleReport} onClose={() => setScheduleReport(null)} />
       )}
 
+      {/* ── Header ── */}
       <div style={s.pageHeader}>
-        <div>
-          <h2 style={s.pageTitle}>Generate Report</h2>
-          <p style={s.pageSubtitle}>Reportni tanlang — ochish yoki jadvalga qo'shing</p>
-        </div>
-        <div style={s.reportCount}>
-          <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="#2563eb">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-          {totalElements} ta
-        </div>
-      </div>
-
-      <div style={s.searchBar}>
-        <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="#94a3b8" style={{ flexShrink: 0 }}>
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 105 11a6 6 0 0012 0z" />
-        </svg>
-        <input value={searchInput} onChange={e => setSearchInput(e.target.value)}
-          placeholder="Report nomi bo'yicha qidirish..." style={s.searchInput} />
-        {searchInput && (
-          <button onClick={() => {    
-           setSearchInput(""); setSearch(""); fetchReports(0, ""); }}
-            style={s.clearBtn}>✕</button>
-        )}
-      </div>
-
-      {loading ? (
-        <div style={s.center}>
-          <div style={s.spinner} />
-          <p style={{ color: "#94a3b8", marginTop: 12, fontSize: 13 }}>Yuklanmoqda...</p>
-        </div>
-      ) : error ? (
-        <div style={s.center}><div style={s.errorBox}>⚠ {error}</div></div>
-      ) : (
-        <>
-          <div style={s.tableWrap}>
-            <table style={s.table}>
-              <colgroup>
-                <col style={{ width: "52px" }} />
-                <col />
-                <col style={{ width: "240px" }} />
-              </colgroup>
-              <thead>
-                <tr style={s.theadRow}>
-                  <th style={s.th}>#</th>
-                  <th style={s.th}>Report nomi</th>
-                  <th style={{ ...s.th, textAlign: "left", paddingLeft: 8 }}>Amal</th>
-                </tr>
-              </thead>
-              <tbody>
-                {reports.length === 0 ? (
-                  <tr><td colSpan={3} style={s.emptyRow}>Report topilmadi</td></tr>
-                ) : reports.map((r, i) => (
-                  <tr key={r.id} style={s.tr}
-                    onMouseEnter={e => e.currentTarget.style.background = "#f8fafc"}
-                    onMouseLeave={e => e.currentTarget.style.background = "#fff"}>
-                    <td style={s.td}>
-                      <span style={s.idBadge}>{page * PAGE_SIZE + i + 1}</span>
-                    </td>
-                    <td style={s.td}>
-                      <div style={s.reportCell}>
-                        <div style={s.reportIcon}>
-                          <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="#2563eb">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                          </svg>
-                        </div>
-                        <div>
-                          <div style={s.reportName}>{r.name}</div>
-                          {r.description && <div style={s.reportDesc}>{r.description}</div>}
-                        </div>
-                      </div>
-                    </td>
-                    <td style={{ ...s.td, paddingLeft: 8 }}>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <button onClick={() => handleOpen(r)} style={s.openBtn}>
-                          <svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                          </svg>
-                          Ochish
-                        </button>
-                        <button onClick={() => setScheduleReport(r)} style={s.scheduleBtn}>
-                          <svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <rect x="3" y="4" width="18" height="18" rx="2" strokeWidth="2"/>
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 2v4M8 2v4M3 10h18"/>
-                          </svg>
-                          Jadval
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {view === "reports" && (
+            <button onClick={goBack} style={s.backBtn}>
+              <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7"/>
+              </svg>
+            </button>
+          )}
+          <div>
+            <h2 style={s.pageTitle}>
+              {view === "folders" ? "Generate Report" : selectedFolder?.name}
+            </h2>
+            <p style={s.pageSubtitle}>
+              {view === "folders"
+                ? "Papkani tanlang"
+                : "Reportni tanlang — ochish yoki jadvalga qo\'shing"}
+            </p>
           </div>
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div style={s.pagination}>
-              <span style={s.pageInfo}>
-                {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, totalElements)} / {totalElements} ta
-              </span>
-              <div style={s.pageButtons}>
-                <button onClick={() => goPage(0)} disabled={page === 0}
-                  style={{ ...s.pageBtn, ...(page === 0 ? s.pageBtnDisabled : {}) }}>«</button>
-                <button onClick={() => goPage(page - 1)} disabled={page === 0}
-                  style={{ ...s.pageBtn, ...(page === 0 ? s.pageBtnDisabled : {}) }}>‹</button>
-                {getPageRange()[0] > 0 && <span style={s.ellipsis}>…</span>}
-                {getPageRange().map(p => (
-                  <button key={p} onClick={() => goPage(p)}
-                    style={{ ...s.pageBtn, ...(p === page ? s.pageBtnActive : {}) }}>
-                    {p + 1}
-                  </button>
-                ))}
-                {getPageRange()[getPageRange().length - 1] < totalPages - 1 && <span style={s.ellipsis}>…</span>}
-                <button onClick={() => goPage(page + 1)} disabled={page >= totalPages - 1}
-                  style={{ ...s.pageBtn, ...(page >= totalPages - 1 ? s.pageBtnDisabled : {}) }}>›</button>
-                <button onClick={() => goPage(totalPages - 1)} disabled={page >= totalPages - 1}
-                  style={{ ...s.pageBtn, ...(page >= totalPages - 1 ? s.pageBtnDisabled : {}) }}>»</button>
-              </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {view === "reports" && (
+            <div style={s.reportCount}>
+              <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="#2563eb">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              {totalElements} ta
             </div>
           )}
+          {view === "folders" && (
+            <div style={{ display: "flex", gap: 4, background: "#f1f5f9", borderRadius: 8, padding: 3 }}>
+              <button
+                onClick={() => setFolderView("grid")}
+                title="Grid ko'rinish"
+                style={{ ...s.viewToggleBtn, background: folderView === "grid" ? "#fff" : "transparent", boxShadow: folderView === "grid" ? "0 1px 4px rgba(0,0,0,0.1)" : "none", color: folderView === "grid" ? "#2563eb" : "#94a3b8" }}>
+                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                  <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+                  <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+                </svg>
+              </button>
+              <button
+                onClick={() => setFolderView("list")}
+                title="List ko'rinish"
+                style={{ ...s.viewToggleBtn, background: folderView === "list" ? "#fff" : "transparent", boxShadow: folderView === "list" ? "0 1px 4px rgba(0,0,0,0.1)" : "none", color: folderView === "list" ? "#2563eb" : "#94a3b8" }}>
+                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                  <path d="M4 6h16M4 12h16M4 18h16"/>
+                </svg>
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
 
-          <div style={s.tableFooter}>
-            Jami: <strong>{totalElements}</strong> ta report
-            {search && ` (qidiruv: "${search}")`}
+      {/* ── FOLDERS VIEW ── */}
+      {view === "folders" && (
+        foldersLoading ? (
+          <div style={s.center}><div style={s.spinner}/><p style={{ color: "#94a3b8", marginTop: 12, fontSize: 13 }}>Yuklanmoqda...</p></div>
+        ) : error ? (
+          <div style={s.center}><div style={s.errorBox}>⚠ {error}</div></div>
+        ) : folders.length === 0 ? (
+          <div style={s.center}>
+            <svg width="48" height="48" fill="none" viewBox="0 0 24 24" stroke="#cbd5e1" strokeWidth="1.2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>
+            </svg>
+            <p style={{ color: "#94a3b8", marginTop: 10, fontSize: 13 }}>Papka topilmadi</p>
           </div>
+        ) : (
+          <>{folderView === "grid" ? (
+            <div style={s.foldersGrid}>
+              {folders.map((folder, idx) => {
+                const clr = FOLDER_COLORS[idx % FOLDER_COLORS.length];
+                return (
+                  <button key={folder.folderId} onClick={() => openFolder({ id: folder.folderId, name: folder.folderName })}
+                    style={{ ...s.folderCard, background: clr.bg, borderColor: clr.border }}>
+                    <div style={{ ...s.folderIcon, color: clr.icon }}>
+                      <svg width="26" height="26" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>
+                      </svg>
+                    </div>
+                    <div style={{ ...s.folderName, color: clr.text }}>{folder.folderName}</div>
+                    <div style={{ ...s.folderCount, color: clr.icon }}>{folder.reportCount} ta report</div>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={s.foldersList}>
+              {folders.map((folder, idx) => {
+                const clr = FOLDER_COLORS[idx % FOLDER_COLORS.length];
+                return (
+                  <button key={folder.folderId} onClick={() => openFolder({ id: folder.folderId, name: folder.folderName })}
+                    style={{ ...s.folderListItem, borderColor: clr.border }}
+                    onMouseEnter={e => e.currentTarget.style.background = clr.bg}
+                    onMouseLeave={e => e.currentTarget.style.background = "#fff"}>
+                    <div style={{ width: 36, height: 36, borderRadius: 9, background: clr.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: clr.icon }}>
+                      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>
+                      </svg>
+                    </div>
+                    <div style={{ flex: 1, textAlign: "left" }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: clr.text }}>{folder.folderName}</div>
+                      <div style={{ fontSize: 11, color: clr.icon, marginTop: 1 }}>{folder.reportCount} ta report</div>
+                    </div>
+                    <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="#cbd5e1" strokeWidth="2">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/>
+                    </svg>
+                  </button>
+                );
+              })}
+            </div>
+          )}</>
+        )
+      )}
+
+      {/* ── REPORTS VIEW ── */}
+      {view === "reports" && (
+        <>
+          <div style={s.searchBar}>
+            <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="#94a3b8" style={{ flexShrink: 0 }}>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 105 11a6 6 0 0012 0z" />
+            </svg>
+            <input value={searchInput} onChange={e => setSearchInput(e.target.value)}
+              placeholder="Report nomi bo\'yicha qidirish..." style={s.searchInput} />
+            {searchInput && (
+              <button onClick={() => { setSearchInput(""); setSearch(""); fetchReports(0, "", selectedFolder); }}
+                style={s.clearBtn}>✕</button>
+            )}
+          </div>
+
+          {loading ? (
+            <div style={s.center}><div style={s.spinner}/><p style={{ color: "#94a3b8", marginTop: 12, fontSize: 13 }}>Yuklanmoqda...</p></div>
+          ) : error ? (
+            <div style={s.center}><div style={s.errorBox}>⚠ {error}</div></div>
+          ) : (
+            <>
+              <div style={s.tableWrap}>
+                <table style={s.table}>
+                  <colgroup>
+                    <col style={{ width: "52px" }} />
+                    <col />
+                    <col style={{ width: "240px" }} />
+                  </colgroup>
+                  <thead>
+                    <tr style={s.theadRow}>
+                      <th style={s.th}>#</th>
+                      <th style={s.th}>Report nomi</th>
+                      <th style={{ ...s.th, textAlign: "left", paddingLeft: 8 }}>Amal</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {reports.length === 0 ? (
+                      <tr><td colSpan={3} style={s.emptyRow}>Report topilmadi</td></tr>
+                    ) : reports.map((r, i) => (
+                      <tr key={r.id} style={s.tr}
+                        onMouseEnter={e => e.currentTarget.style.background = "#f8fafc"}
+                        onMouseLeave={e => e.currentTarget.style.background = "#fff"}>
+                        <td style={s.td}><span style={s.idBadge}>{page * PAGE_SIZE + i + 1}</span></td>
+                        <td style={s.td}>
+                          <div style={s.reportCell}>
+                            <div style={s.reportIcon}>
+                              <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="#2563eb">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                              </svg>
+                            </div>
+                            <div>
+                              <div style={s.reportName}>{r.name}</div>
+                              {r.description && <div style={s.reportDesc}>{r.description}</div>}
+                            </div>
+                          </div>
+                        </td>
+                        <td style={{ ...s.td, paddingLeft: 8 }}>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <button onClick={() => handleOpen(r)} style={s.openBtn}>
+                              <svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                              </svg>
+                              Ochish
+                            </button>
+                            <button onClick={() => setScheduleReport(r)} style={s.scheduleBtn}>
+                              <svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <rect x="3" y="4" width="18" height="18" rx="2" strokeWidth="2"/>
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 2v4M8 2v4M3 10h18"/>
+                              </svg>
+                              Jadval
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {totalPages > 1 && (
+                <div style={s.pagination}>
+                  <span style={s.pageInfo}>{page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, totalElements)} / {totalElements} ta</span>
+                  <div style={s.pageButtons}>
+                    <button onClick={() => goPage(0)} disabled={page === 0} style={{ ...s.pageBtn, ...(page === 0 ? s.pageBtnDisabled : {}) }}>«</button>
+                    <button onClick={() => goPage(page - 1)} disabled={page === 0} style={{ ...s.pageBtn, ...(page === 0 ? s.pageBtnDisabled : {}) }}>‹</button>
+                    {getPageRange()[0] > 0 && <span style={s.ellipsis}>…</span>}
+                    {getPageRange().map(p => (
+                      <button key={p} onClick={() => goPage(p)} style={{ ...s.pageBtn, ...(p === page ? s.pageBtnActive : {}) }}>{p + 1}</button>
+                    ))}
+                    {getPageRange()[getPageRange().length - 1] < totalPages - 1 && <span style={s.ellipsis}>…</span>}
+                    <button onClick={() => goPage(page + 1)} disabled={page >= totalPages - 1} style={{ ...s.pageBtn, ...(page >= totalPages - 1 ? s.pageBtnDisabled : {}) }}>›</button>
+                    <button onClick={() => goPage(totalPages - 1)} disabled={page >= totalPages - 1} style={{ ...s.pageBtn, ...(page >= totalPages - 1 ? s.pageBtnDisabled : {}) }}>»</button>
+                  </div>
+                </div>
+              )}
+              <div style={s.tableFooter}>Jami: <strong>{totalElements}</strong> ta report{search && ` (qidiruv: "${search}")`}</div>
+            </>
+          )}
         </>
       )}
     </div>
@@ -688,6 +829,15 @@ const GenerateReportPage = () => {
 
 // ── Styles ─────────────────────────────────────────────────────
 const s = {
+  foldersGrid:  { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 14, marginTop: 4 },
+  folderCard:   { border: "1.5px solid", borderRadius: 14, padding: "22px 16px 18px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, transition: "transform 0.15s, box-shadow 0.15s", textAlign: "center" },
+  folderIcon:   { marginBottom: 2 },
+  folderName:   { fontSize: 14, fontWeight: 700, lineHeight: 1.3 },
+  folderCount:  { fontSize: 11, fontWeight: 500, opacity: 0.8 },
+  foldersList:     { display: "flex", flexDirection: "column", gap: 6, marginTop: 4 },
+  folderListItem:  { display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: "#fff", border: "1.5px solid", borderRadius: 10, cursor: "pointer", transition: "background 0.15s", width: "100%", textAlign: "left" },
+  viewToggleBtn:   { width: 30, height: 28, borderRadius: 6, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s" },
+  backBtn:      { width: 32, height: 32, borderRadius: 8, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
   wrapper:      { padding: "16px 20px", height: "100%", overflowY: "auto", boxSizing: "border-box" },
   center:       { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%" },
   spinner:      { width: 28, height: 28, border: "3px solid #e2e8f0", borderTop: "3px solid #2563eb", borderRadius: "50%", animation: "grSpin 0.8s linear infinite" },

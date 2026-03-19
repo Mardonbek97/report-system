@@ -72,8 +72,8 @@ public class AuthService {
             throw new AppBadException(bundleMessageSource.getMessage("auth.username.status", null, new Locale(lang.name())));
         }
 
-        if(user.getStatus().toString() == "BLOCKED" || user.getStatus().toString() == "CLOSED"){
-            throw  new AppBadException(bundleMessageSource.getMessage("auth.username.status", null, new Locale(lang.name())));
+        if (user.getStatus().toString() == "BLOCKED" || user.getStatus().toString() == "CLOSED") {
+            throw new AppBadException(bundleMessageSource.getMessage("auth.username.status", null, new Locale(lang.name())));
         }
 
 
