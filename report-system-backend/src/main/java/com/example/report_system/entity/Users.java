@@ -15,10 +15,10 @@ public class Users {
 
     @Id
     @Column(unique = true)
-    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "SEQ_FOR_REP")
+    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "SEQ_FOR_USERS")
     @SequenceGenerator(
-            name = "SEQ_FOR_REP",
-            sequenceName = "SEQ_FOR_REP",
+            name = "SEQ_FOR_USERS",
+            sequenceName = "SEQ_FOR_USERS",
             allocationSize = 1
     )
     private Long Id;
