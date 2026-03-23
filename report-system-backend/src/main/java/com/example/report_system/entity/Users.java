@@ -15,7 +15,7 @@ public class Users {
 
     @Id
     @Column(unique = true)
-    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "SEQUENCE SEQ_FOR_REP")
+    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "SEQ_FOR_REP")
     @SequenceGenerator(
             name = "SEQ_FOR_VAL",
             sequenceName = "SEQ_FOR_VAL",
