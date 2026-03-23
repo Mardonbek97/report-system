@@ -17,8 +17,8 @@ public class Users {
     @Column(unique = true)
     @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "SEQ_FOR_REP")
     @SequenceGenerator(
-            name = "SEQ_FOR_VAL",
-            sequenceName = "SEQ_FOR_VAL",
+            name = "SEQ_FOR_REP",
+            sequenceName = "SEQ_FOR_REP",
             allocationSize = 1
     )
     private Long Id;
