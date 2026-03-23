@@ -1,0 +1,18 @@
+PROMPT -----------------------------------;
+PROMPT -- BEGINNING ORACLE OBJECTS--;
+PROMPT -----------------------------------;
+@@'pljson-develop_v3/install.sql';
+PROMPT -----------------------------------;
+PROMPT -- Compiling objects for PL/JSON NEW CUSTOM--;
+PROMPT -----------------------------------;
+@@'pljson_new/pljson_element.typ';
+@@'pljson_new/pljson_printer.pck';
+PROMPT -----------------------------------;
+PROMPT -- Compiling objects for REP_CORE OBJECTS --;
+PROMPT -----------------------------------;
+@@'Rep_Core/TABLES.sql';
+@@'Rep_Core/SEQUENCES.sql';
+@@'Rep_Core/Rep_Core_Util.pck';
+PROMPT -----------------------------------;
+PROMPT -- ENDING ORACLE OBJECTS--;
+PROMPT -----------------------------------;

@@ -1,0 +1,40 @@
+{
+  "name": "pljson",
+  "version": "3.7.1",
+  "description": "A PL/SQL object for handling JSON data in Oracle stored procedures and tables.",
+  "main": "index.js",
+  "directories": {
+    "example": "examples"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "sitedev": "metalsmith-start -p 4000",
+    "gensite": "metalsmith",
+    "gendocs": "bash ./build-apidocs.sh",
+    "release": "metalsmith && bash ./build-apidocs.sh && bash ./build-release.sh"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pljson/pljson.git"
+  },
+  "keywords": [
+    "json",
+    "pl",
+    "plsql"
+  ],
+  "author": "Jonas Krogsbøll",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/pljson/pljson/issues"
+  },
+  "homepage": "http://pljson.github.io/pljson",
+  "dependencies": {
+    "handlebars": "^4.0.10",
+    "metalsmith": "^2.3.0",
+    "metalsmith-assets": "^0.1.0",
+    "metalsmith-debug": "^1.1.0",
+    "metalsmith-layouts": "^1.8.1",
+    "metalsmith-move-up": "^1.0.0",
+    "metalsmith-start": "^2.0.1"
+  }
+}
