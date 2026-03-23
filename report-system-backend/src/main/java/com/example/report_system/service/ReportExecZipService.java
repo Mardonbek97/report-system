@@ -49,7 +49,7 @@ public class ReportExecZipService {
         this.userRepository = userRepository;
     }
     public record ExportResult(byte[] bytes, String extension) {}
-    private static final int MAX_ROWS_PER_FILE = 2_000;
+    private static final int MAX_ROWS_PER_FILE = 1_000_000;
 
     // ── Template yuklash — disk → classpath ───────────────
     @Value("${report.template.dir}")
